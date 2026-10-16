@@ -40,7 +40,9 @@ def assign_speakers(segments: tuple[Segment, ...], turns: list[SpeakerTurn]) -> 
                 best_overlap = overlap
                 best_label = raw
         speaker = display_name(best_label) if best_label else None
-        labeled.append(Segment(text=seg.text, start_ms=seg.start_ms, end_ms=seg.end_ms, speaker=speaker))
+        labeled.append(
+            Segment(text=seg.text, start_ms=seg.start_ms, end_ms=seg.end_ms, speaker=speaker)
+        )
     return tuple(labeled)
 
 
@@ -67,7 +69,9 @@ def _run_pyannote(path: Path, speakers_expected: int | None) -> list[SpeakerTurn
         )
 
     try:
-        pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=token)
+        pipeline = Pipeline.from_pretrained(
+            "pyannote/speaker-diarization-3.1", use_auth_token=token
+        )
         kwargs = {"num_speakers": speakers_expected} if speakers_expected else {}
         diarization = pipeline(str(path), **kwargs)
     except Exception as error:

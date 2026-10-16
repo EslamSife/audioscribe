@@ -49,4 +49,3 @@ def load_api_key(config_path: Path | None = None) -> str:
         f"  - Run: transcribe config set-key your-key\n"
         f"  - Add {API_KEY_ENV}=your-key to your .env file"
     )
-

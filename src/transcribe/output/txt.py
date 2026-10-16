@@ -11,4 +11,3 @@ def render(transcript: Transcript, title: str) -> str:
     elif transcript.text:
         sections.append(transcript.text)
     return ("\n\n".join(filter(None, sections))).strip() + "\n"
-

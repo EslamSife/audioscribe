@@ -27,7 +27,10 @@ class LocalWhisperProvider:
 
             dev = "cuda" if self.device == "cuda" else ("cpu" if self.device == "cpu" else "auto")
             compute_type = "float16" if dev == "cuda" else "int8"
-            self._model = ("faster_whisper", WhisperModel(self.model_size, device=dev, compute_type=compute_type))
+            self._model = (
+                "faster_whisper",
+                WhisperModel(self.model_size, device=dev, compute_type=compute_type),
+            )
             return self._model
         except ImportError:
             pass
@@ -72,10 +75,14 @@ class LocalWhisperProvider:
         if opts.speakers and transcript.segments:
             from transcribe.diarization import diarize_transcript
 
-            transcript = diarize_transcript(path, transcript, speakers_expected=opts.speakers_expected)
+            transcript = diarize_transcript(
+                path, transcript, speakers_expected=opts.speakers_expected
+            )
         return transcript
 
-    def _transcribe_faster_whisper(self, model: Any, path: Path, opts: TranscriptionOptions) -> Transcript:
+    def _transcribe_faster_whisper(
+        self, model: Any, path: Path, opts: TranscriptionOptions
+    ) -> Transcript:
         kwargs: dict[str, Any] = {}
         if opts.language and not opts.auto_detect_language:
             kwargs["language"] = opts.language
@@ -111,7 +118,9 @@ class LocalWhisperProvider:
             language_code=lang,
         )
 
-    def _transcribe_openai_whisper(self, model: Any, path: Path, opts: TranscriptionOptions) -> Transcript:
+    def _transcribe_openai_whisper(
+        self, model: Any, path: Path, opts: TranscriptionOptions
+    ) -> Transcript:
         kwargs: dict[str, Any] = {}
         if opts.language and not opts.auto_detect_language:
             kwargs["language"] = opts.language

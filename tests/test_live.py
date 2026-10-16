@@ -30,13 +30,15 @@ def test_live_session_streams_and_builds_transcript():
         def decorator(handler):
             registered_handlers[event_type] = handler
             return handler
+
         return decorator
 
     mock_client.on = mock_on
 
-    with patch("assemblyai.streaming.v3.StreamingClient", return_value=mock_client), \
-         patch("assemblyai.streaming.v3.RealTimeEvents") as mock_events:
-
+    with (
+        patch("assemblyai.streaming.v3.StreamingClient", return_value=mock_client),
+        patch("assemblyai.streaming.v3.RealTimeEvents") as mock_events,
+    ):
         mock_events.Turn = "Turn"
         mock_events.Error = "Error"
 
@@ -100,6 +102,6 @@ def test_resolve_device_id_not_found():
 
     with patch.dict("sys.modules", {"sounddevice": mock_sd}):
         from transcribe.live import resolve_device_id
+
         with pytest.raises(TranscriptionError, match="not found"):
             resolve_device_id("NonExistentDevice")
-

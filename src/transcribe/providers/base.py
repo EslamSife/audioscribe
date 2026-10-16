@@ -12,4 +12,3 @@ class TranscriptionProvider(Protocol):
         options: TranscriptionOptions | None = None,
         speakers: bool = False,
     ) -> Transcript: ...
-

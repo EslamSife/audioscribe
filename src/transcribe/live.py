@@ -130,7 +130,9 @@ class SpeechDetector:
         if not self._vad_ready:
             return True
         try:
-            audio = self._np.frombuffer(chunk, dtype=self._np.int16).astype(self._np.float32) / 32768.0
+            audio = (
+                self._np.frombuffer(chunk, dtype=self._np.int16).astype(self._np.float32) / 32768.0
+            )
             return bool(self._get_speech_timestamps(audio, self._vad_options))
         except Exception:
             self._vad_ready = False
@@ -177,7 +179,9 @@ def print_audio_devices_table() -> None:
         )
 
     console.print(table)
-    console.print("\n[dim]Tip: To capture computer/browser sound, select a virtual device (e.g. BlackHole, Loopback, Stereo Mix).[/dim]\n")
+    console.print(
+        "\n[dim]Tip: To capture computer/browser sound, select a virtual device (e.g. BlackHole, Loopback, Stereo Mix).[/dim]\n"
+    )
 
 
 class LiveTranscriptionSession:
@@ -207,7 +211,6 @@ class LiveTranscriptionSession:
         import threading
 
         self._stop_capture = threading.Event()
-
 
     def get_mixed_stream(self) -> Generator[bytes, None, None]:
         """Meeting mode: merge two input devices (e.g. BlackHole + microphone) into one mono stream.
@@ -378,13 +381,14 @@ class LiveTranscriptionSession:
                 else:
                     console.print(f"[dim]{mins:02d}:{secs:02d}[/dim] [bold]{text}[/bold]")
 
-
         @client.on(v3.RealTimeEvents.Error)
         def handle_error(client_instance: Any, error: Any) -> None:
             console.print(f"[bold red]Live Streaming Error:[/bold red] {error}")
 
         dev_desc = f" (Device: {self.device})" if self.device is not None else ""
-        console.print(f"[bold cyan]🔴 Live Transcription Started{dev_desc}[/bold cyan] (Press [bold yellow]Ctrl+C[/bold yellow] to finish)...")
+        console.print(
+            f"[bold cyan]🔴 Live Transcription Started{dev_desc}[/bold cyan] (Press [bold yellow]Ctrl+C[/bold yellow] to finish)..."
+        )
 
         silent_chunk_count = 0
         clipping_chunk_count = 0
@@ -448,7 +452,6 @@ class LiveTranscriptionSession:
         self,
         provider: Any,
         options: Any = None,
-
         audio_stream: Generator[bytes, None, None] | None = None,
         on_turn: Callable[[str, int, int], None] | None = None,
         preview_provider: Any = None,
@@ -504,17 +507,19 @@ class LiveTranscriptionSession:
         dev_desc = f" (Device: {self.device})" if self.device is not None else ""
         if self.mix_device is not None:
             dev_desc = f" (Devices: {self.device} + {self.mix_device})"
-        console.print(f"[bold cyan]🔴 Live Transcription Started{dev_desc}[/bold cyan] (Press [bold yellow]Ctrl+C[/bold yellow] to finish)...")
+        console.print(
+            f"[bold cyan]🔴 Live Transcription Started{dev_desc}[/bold cyan] (Press [bold yellow]Ctrl+C[/bold yellow] to finish)..."
+        )
 
         chunk_duration_ms = 100  # 100ms per chunk
         silence_threshold_db = -45.0
-        end_silence_chunks = 5          # a 500ms pause always ends the phrase
-        soft_commit_chunks = 50         # once the phrase reaches 5s of speech...
-        soft_silence_chunks = 3         # ...a 300ms micro-pause is enough to end it
-        max_phrase_chunks = 100         # hard cap: commit after 10s even with no pause
-        preview_min_chunks = 2          # try to refresh the preview every ~200ms (RealtimeSTT's pace)...
-        preview_cost_chunks = 2         # ...slowed down adaptively to 2x what a pass costs on this machine
-        preroll_chunks = 3              # keep 300ms before speech starts so word onsets aren't clipped
+        end_silence_chunks = 5  # a 500ms pause always ends the phrase
+        soft_commit_chunks = 50  # once the phrase reaches 5s of speech...
+        soft_silence_chunks = 3  # ...a 300ms micro-pause is enough to end it
+        max_phrase_chunks = 100  # hard cap: commit after 10s even with no pause
+        preview_min_chunks = 2  # try to refresh the preview every ~200ms (RealtimeSTT's pace)...
+        preview_cost_chunks = 2  # ...slowed down adaptively to 2x what a pass costs on this machine
+        preroll_chunks = 3  # keep 300ms before speech starts so word onsets aren't clipped
 
         all_segments: list[Segment] = []
         session_start_time = time.time()
@@ -540,7 +545,9 @@ class LiveTranscriptionSession:
 
         io_lock = threading.Lock()
 
-        def transcribe_phrase(raw_bytes: bytes, engine: Any, beam_size: int | None = None) -> Transcript | None:
+        def transcribe_phrase(
+            raw_bytes: bytes, engine: Any, beam_size: int | None = None
+        ) -> Transcript | None:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp_wav_path = Path(tmp.name)
             try:
@@ -600,7 +607,7 @@ class LiveTranscriptionSession:
             # visually distinct from committed lines.
             width = max(20, shutil.get_terminal_size().columns)
             budget = width - 7  # room for the leading "  … " plus a safety margin
-            line = text if len(text) <= budget else "…" + text[-(budget - 1):]
+            line = text if len(text) <= budget else "…" + text[-(budget - 1) :]
             with io_lock:
                 sys.stderr.write(f"\r\033[K\033[2m  … {line}\033[0m")
                 sys.stderr.flush()
@@ -686,7 +693,9 @@ class LiveTranscriptionSession:
                     chunks_since_preview = 0
                     pass_started = time.time()
                     result = transcribe_phrase(b"".join(phrase), preview_engine, beam_size=3)
-                    preview_cost_chunks = max(preview_min_chunks, int((time.time() - pass_started) * 20))
+                    preview_cost_chunks = max(
+                        preview_min_chunks, int((time.time() - pass_started) * 20)
+                    )
                     if result is None:
                         continue
                     if len(result.segments) >= 2:
@@ -697,11 +706,13 @@ class LiveTranscriptionSession:
                         # unfinished tail in the buffer.
                         cut = min(len(phrase) - 1, result.segments[-2].end_ms // chunk_duration_ms)
                         if cut > 0:
-                            commit_queue.put((
-                                b"".join(phrase[:cut]),
-                                phrase_start_ms,
-                                phrase_start_ms + cut * chunk_duration_ms,
-                            ))
+                            commit_queue.put(
+                                (
+                                    b"".join(phrase[:cut]),
+                                    phrase_start_ms,
+                                    phrase_start_ms + cut * chunk_duration_ms,
+                                )
+                            )
                             phrase = phrase[cut:]
                             phrase_start_ms += cut * chunk_duration_ms
                             show_preview(result.segments[-1].text.strip())
@@ -721,7 +732,9 @@ class LiveTranscriptionSession:
         # the worker finish pending lines. A second Ctrl+C skips the wait.
         try:
             if phrase or not commit_queue.empty():
-                console.print("[dim]Finishing the last phrases (press Ctrl+C again to skip)...[/dim]")
+                console.print(
+                    "[dim]Finishing the last phrases (press Ctrl+C again to skip)...[/dim]"
+                )
             commit_phrase()
             commit_queue.put(None)
             commit_worker.join()
@@ -740,6 +753,3 @@ class LiveTranscriptionSession:
             audio_duration_s=total_duration,
             language_code=self.language or "en",
         )
-
-
-

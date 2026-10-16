@@ -66,7 +66,7 @@ def generate_notes(transcript: Transcript, title: str) -> str:
             ],
         ) as stream:
             message = stream.get_final_message()
-    except (anthropic.AuthenticationError, TypeError):
+    except anthropic.AuthenticationError, TypeError:
         # The SDK raises TypeError when no key/credentials can be found at all
         raise TranscriptionError(
             "Claude API key is missing or invalid.\n"

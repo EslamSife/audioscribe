@@ -25,9 +25,7 @@ WITH_SPEAKERS = Transcript(
 
 WITH_METADATA_AND_CHAPTERS = Transcript(
     text="Full transcript text.",
-    segments=(
-        Segment("Hello everyone.", 0, 2000, speaker="Speaker A"),
-    ),
+    segments=(Segment("Hello everyone.", 0, 2000, speaker="Speaker A"),),
     audio_duration_s=120,
     summary="Key meeting highlights.",
     chapters=(
@@ -48,9 +46,7 @@ def test_txt_without_speakers_is_plain_text():
 
 
 def test_txt_with_speakers_has_one_line_per_speaker_turn():
-    assert output.txt.render(WITH_SPEAKERS, "demo") == (
-        "Speaker A: Hi there.\nSpeaker B: Hello.\n"
-    )
+    assert output.txt.render(WITH_SPEAKERS, "demo") == ("Speaker A: Hi there.\nSpeaker B: Hello.\n")
 
 
 def test_txt_with_summary():
@@ -144,4 +140,3 @@ def test_write_overwrites_with_force(tmp_path):
     target.write_text("old")
     output.write(PLAIN, "txt", target, title="demo", force=True)
     assert target.read_text() == "Hello world. Next sentence.\n"
-

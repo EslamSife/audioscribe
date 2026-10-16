@@ -50,9 +50,7 @@ class AssemblyAIProvider:
         config = aai.TranscriptionConfig(**config_kwargs) if config_kwargs else None
         result = self._transcriber.transcribe(str(path), config)
         if result.status == aai.TranscriptStatus.error:
-            raise TranscriptionError(
-                f"Transcription failed (job {result.id}): {result.error}"
-            )
+            raise TranscriptionError(f"Transcription failed (job {result.id}): {result.error}")
         return to_transcript(result)
 
 
@@ -95,4 +93,3 @@ def to_transcript(result) -> Transcript:
         language_code=getattr(result, "language_code", None),
         confidence=getattr(result, "confidence", None),
     )
-

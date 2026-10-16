@@ -44,4 +44,3 @@ def unique_path(path: Path) -> Path:
         if not candidate.exists():
             return candidate
         n += 1
-

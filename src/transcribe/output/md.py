@@ -49,4 +49,3 @@ def _clock(ms: int) -> str:
     if h:
         return f"{h}:{m:02d}:{s:02d}"
     return f"{m:02d}:{s:02d}"
-

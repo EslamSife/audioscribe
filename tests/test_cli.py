@@ -37,7 +37,6 @@ def test_cli_no_args_shows_error():
     assert "Please provide audio files, URLs, or 'live'" in result.output
 
 
-
 def test_cli_invalid_format(tmp_path):
     audio = make_test_audio(tmp_path)
     result = runner.invoke(app, [str(audio), "--format", "docx"])
@@ -91,10 +90,12 @@ def test_cli_options_forwarding(tmp_path, monkeypatch):
             [
                 str(audio),
                 "--speakers",
-                "--language", "es",
+                "--language",
+                "es",
                 "--summarize",
                 "--chapters",
-                "--boost", "Python,AssemblyAI",
+                "--boost",
+                "Python,AssemblyAI",
             ],
         )
         assert result.exit_code == 0
@@ -127,8 +128,10 @@ def test_cli_config_set_key_and_show(tmp_path, monkeypatch):
 def test_cli_whisper_provider(tmp_path):
     audio = make_test_audio(tmp_path, "local_test.mp3")
 
-    with patch("transcribe.cli.get_provider") as mock_get_provider, \
-         patch("transcribe.cli.transcribe_file", return_value=DUMMY_TRANSCRIPT):
+    with (
+        patch("transcribe.cli.get_provider") as mock_get_provider,
+        patch("transcribe.cli.transcribe_file", return_value=DUMMY_TRANSCRIPT),
+    ):
         mock_provider = MagicMock()
         mock_get_provider.return_value = mock_provider
 
@@ -147,12 +150,15 @@ def test_cli_live_transcription_command(tmp_path):
         mock_session.run.return_value = DUMMY_TRANSCRIPT
         mock_session_cls.return_value = mock_session
 
-        result = runner.invoke(app, ["live", "--out", str(out_file), "--format", "md", "--device", "1"])
+        result = runner.invoke(
+            app, ["live", "--out", str(out_file), "--format", "md", "--device", "1"]
+        )
         assert result.exit_code == 0
         assert out_file.exists()
         assert "live_recording" in out_file.read_text()
-        mock_session_cls.assert_called_once_with(language=None, device="1", mix_device=None, require_api_key=True)
-
+        mock_session_cls.assert_called_once_with(
+            language=None, device="1", mix_device=None, require_api_key=True
+        )
 
 
 def test_cli_list_devices():
@@ -167,16 +173,16 @@ def test_cli_url_transcription(tmp_path, monkeypatch):
     audio = make_test_audio(tmp_path, "downloaded.mp3")
     out_target = tmp_path / "yt_output.txt"
 
-    with patch("transcribe.cli.url_audio_source") as mock_url_source, \
-         patch("transcribe.cli.transcribe_file", return_value=DUMMY_TRANSCRIPT):
-
+    with (
+        patch("transcribe.cli.url_audio_source") as mock_url_source,
+        patch("transcribe.cli.transcribe_file", return_value=DUMMY_TRANSCRIPT),
+    ):
         # Context manager returns (audio, "YouTube_Video_Title")
         mock_url_source.return_value.__enter__.return_value = (audio, "YouTube_Video_Title")
 
-        result = runner.invoke(app, ["https://youtube.com/watch?v=123", "--format", "txt", "--out", str(out_target)])
+        result = runner.invoke(
+            app, ["https://youtube.com/watch?v=123", "--format", "txt", "--out", str(out_target)]
+        )
         assert result.exit_code == 0
         assert "yt_output.txt" in result.output
         assert out_target.exists()
-
-
-

@@ -34,8 +34,6 @@ def transcribe_file(
         return provider.transcribe(path, speakers=opts.speakers)
 
 
-
-
 def validate_audio_file(path: Path) -> None:
     if not path.exists():
         raise TranscriptionError(f"File not found: {path}")
@@ -43,8 +41,6 @@ def validate_audio_file(path: Path) -> None:
         raise TranscriptionError(f"Not a file: {path}")
     if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
         supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
-        raise TranscriptionError(
-            f"Unsupported file type '{path.suffix}'. Supported: {supported}"
-        )
+        raise TranscriptionError(f"Unsupported file type '{path.suffix}'. Supported: {supported}")
     if path.stat().st_size == 0:
         raise TranscriptionError(f"File is empty: {path}")

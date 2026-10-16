@@ -186,7 +186,9 @@ def main(
         return
 
     if not files:
-        typer.echo("Error: Please provide audio files, URLs, or 'live'. Use --help for usage.", err=True)
+        typer.echo(
+            "Error: Please provide audio files, URLs, or 'live'. Use --help for usage.", err=True
+        )
         raise typer.Exit(2)
 
     # 3. Handle 'transcribe config ...' syntax
@@ -207,12 +209,17 @@ def main(
             except config.ConfigError:
                 typer.echo("API key: not configured")
             return
-        typer.echo("Usage: transcribe config set-key <YOUR_API_KEY> | transcribe config show", err=True)
+        typer.echo(
+            "Usage: transcribe config set-key <YOUR_API_KEY> | transcribe config show", err=True
+        )
         raise typer.Exit(2)
 
     # 4. Validate format
     if fmt not in output.FORMATS:
-        typer.echo(f"Error: unknown format '{fmt}'. Use one of: {', '.join(sorted(output.FORMATS))}", err=True)
+        typer.echo(
+            f"Error: unknown format '{fmt}'. Use one of: {', '.join(sorted(output.FORMATS))}",
+            err=True,
+        )
         raise typer.Exit(2)
 
     # 5. Parse options
@@ -232,7 +239,9 @@ def main(
         try:
             is_offline = provider.strip().lower() in ("whisper", "local", "offline")
             if is_offline and options.speakers:
-                console.print("[yellow]Note: speaker labels are not supported in local live mode; ignoring --speakers.[/yellow]")
+                console.print(
+                    "[yellow]Note: speaker labels are not supported in local live mode; ignoring --speakers.[/yellow]"
+                )
                 options = replace(options, speakers=False)
 
             session = LiveTranscriptionSession(
@@ -312,7 +321,9 @@ def main(
         try:
             if is_url(item):
                 # Download audio track from web URL
-                with console.status(f"[bold cyan]Downloading audio from URL: {item}...[/bold cyan]", spinner="dots"):
+                with console.status(
+                    f"[bold cyan]Downloading audio from URL: {item}...[/bold cyan]", spinner="dots"
+                ):
                     with url_audio_source(item) as (audio_path, title):
                         with optimized_audio_source(audio_path, compress=compress) as final_audio:
                             transcript = transcribe_file(final_audio, engine, options=options)
@@ -336,7 +347,9 @@ def main(
                         rendered = output.render(transcript, fmt, title=file.stem)
                         typer.echo(rendered, nl=False)
                     else:
-                        with console.status(f"[bold cyan]Transcribing {file.name}...[/bold cyan]", spinner="dots"):
+                        with console.status(
+                            f"[bold cyan]Transcribing {file.name}...[/bold cyan]", spinner="dots"
+                        ):
                             transcript = transcribe_file(audio_path, engine, options=options)
                         target = resolve_target_path(file, out, fmt, is_batch=is_batch)
                         output.write(transcript, fmt, target, title=file.stem, force=force)

@@ -32,8 +32,10 @@ def test_prepare_audio_converts_with_ffmpeg(tmp_path):
     video = tmp_path / "sample.mp4"
     video.write_bytes(b"video data")
 
-    with patch("transcribe.audio.preprocess.is_ffmpeg_available", return_value=True), \
-         patch("subprocess.run") as mock_run:
+    with (
+        patch("transcribe.audio.preprocess.is_ffmpeg_available", return_value=True),
+        patch("subprocess.run") as mock_run,
+    ):
 
         def fake_ffmpeg(cmd, **kwargs):
             out_file = Path(cmd[-1])
@@ -55,8 +57,10 @@ def test_optimized_audio_source_cleans_up_temp_file(tmp_path):
 
     temp_created: list[Path] = []
 
-    with patch("transcribe.audio.preprocess.is_ffmpeg_available", return_value=True), \
-         patch("subprocess.run") as mock_run:
+    with (
+        patch("transcribe.audio.preprocess.is_ffmpeg_available", return_value=True),
+        patch("subprocess.run") as mock_run,
+    ):
 
         def fake_ffmpeg(cmd, **kwargs):
             out_file = Path(cmd[-1])

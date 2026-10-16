@@ -80,4 +80,3 @@ def test_chapters_and_summary_are_mapped():
     assert transcript.chapters[0].end_ms == 5000
     assert transcript.chapters[0].gist == "Kick-off"
     assert transcript.chapters[1].headline == "Next Steps"
-
