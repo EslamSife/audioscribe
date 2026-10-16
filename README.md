@@ -90,6 +90,18 @@ read much less than it was sent. Start Ollama with a bigger window to fix it:
 `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`. Small local models also write weaker notes than
 Claude or GPT, especially action items, so check them before you trust them.
 
+**Notes straight into Obsidian:** `--notes-dir` (or the `NOTES_DIR` environment variable) saves
+the note into a folder such as your vault inbox, with a name like
+`release-planning-2026-10-16.md`. Every note starts with frontmatter (`created`, `updated`,
+`type`, `status`, `tags`, `sources`, `related`) and ends with a `## Related` section. An existing
+note is never overwritten, and a missing folder stops the run before any recording starts.
+
+```sh
+export NOTES_DIR=~/workspace/Sife_Notes/00_Inbox
+uv run transcribe live --provider whisper --model base --device "BlackHole" --mix-device "MacBook" \
+  --final-model small --notes
+```
+
 ---
 
 ## Usage Examples

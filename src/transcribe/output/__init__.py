@@ -34,13 +34,13 @@ def write(
     return path
 
 
-def unique_path(path: Path) -> Path:
+def unique_path(path: Path, sep: str = "_") -> Path:
     """Return `path` if free, otherwise the first free numbered variant (name_2.ext, name_3.ext, ...)."""
     if not path.exists():
         return path
     n = 2
     while True:
-        candidate = path.with_name(f"{path.stem}_{n}{path.suffix}")
+        candidate = path.with_name(f"{path.stem}{sep}{n}{path.suffix}")
         if not candidate.exists():
             return candidate
         n += 1

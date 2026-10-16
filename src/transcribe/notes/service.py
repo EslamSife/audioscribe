@@ -13,6 +13,7 @@ Rules:
 - Transcripts come from imperfect speech recognition: fix obvious recognition
   errors from context, but do not change the meaning.
 - Keep timestamps in [MM:SS] form when you quote or reference a moment.
+- Do not use em dashes; use commas, colons or periods instead.
 
 Produce exactly these sections:
 # <A short descriptive title>

@@ -280,3 +280,36 @@ def test_cli_live_final_model_needs_saved_audio():
     result = runner.invoke(app, ["live", "--stdout", "--final-model", "small"])
     assert result.exit_code == 2
     assert "--final-model needs the saved audio" in result.output
+
+
+def test_cli_notes_dir_writes_vault_style_note(tmp_path, monkeypatch):
+    from transcribe.notes import Notes
+
+    monkeypatch.setenv(config.API_KEY_ENV, "mock-key")
+    audio = make_test_audio(tmp_path)
+    inbox = tmp_path / "00_Inbox"
+    inbox.mkdir()
+    (inbox / "release-planning-2026-10-16.md").write_text("an older note")
+
+    with (
+        patch("transcribe.cli.get_provider"),
+        patch("transcribe.cli.transcribe_file", return_value=DUMMY_TRANSCRIPT),
+        patch("transcribe.notes.generate_notes", return_value=Notes("# Release Planning\n")),
+        patch("transcribe.cli.date") as mock_date,
+    ):
+        mock_date.today.return_value = __import__("datetime").date(2026, 10, 16)
+        result = runner.invoke(app, [str(audio), "--notes", "--notes-dir", str(inbox)])
+
+    assert result.exit_code == 0, result.output
+    note = inbox / "release-planning-2026-10-16-2.md"  # never overwrites the older note
+    assert note.read_text().startswith("---\ncreated: 2026-10-16\n")
+    assert (inbox / "release-planning-2026-10-16.md").read_text() == "an older note"
+
+
+def test_cli_missing_notes_dir_stops_before_recording(tmp_path):
+    with patch("transcribe.cli.LiveTranscriptionSession") as session_cls:
+        result = runner.invoke(app, ["live", "--notes", "--notes-dir", str(tmp_path / "missing")])
+
+    assert result.exit_code == 2
+    assert "notes folder not found" in result.output
+    session_cls.assert_not_called()

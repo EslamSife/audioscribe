@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import date
 from pathlib import Path
 
 import typer
@@ -19,16 +20,26 @@ app = typer.Typer(
 console = Console(stderr=True)
 
 
-def write_notes_file(transcript, target: Path) -> None:
-    """Turn the transcript into a structured note with the configured LLM and save it next to the transcript."""
-    from transcribe.notes import generate_notes
+def write_notes_file(transcript, target: Path, notes_dir: Path | None = None) -> None:
+    """Turn the transcript into a structured note with the configured LLM.
+
+    The note goes into `notes_dir` (e.g. an Obsidian inbox) when given, otherwise next to the transcript.
+    """
+    from transcribe.notes import document, generate_notes
 
     with console.status("[bold cyan]Creating notes...[/bold cyan]", spinner="dots"):
         notes = generate_notes(transcript, title=target.stem)
     for warning in notes.warnings:
         console.print(f"[yellow]Warning: {warning}[/yellow]")
-    notes_target = output.unique_path(target.with_name(f"{target.stem}_notes.md"))
-    notes_target.write_text(notes.text, encoding="utf-8")
+
+    today = date.today()
+    if notes_dir is not None:
+        name = document.filename(notes.text, today=today, fallback=target.stem)
+        notes_target = output.unique_path(notes_dir / name, sep="-")
+    else:
+        notes_target = output.unique_path(target.with_name(f"{target.stem}_notes.md"))
+    content = document.render(notes.text, sources=[str(target.resolve())], today=today)
+    notes_target.write_text(content, encoding="utf-8")
     typer.echo(f"Notes written to {notes_target}")
 
 
@@ -192,6 +203,12 @@ def main(
         "--notes",
         help="After transcribing, write a structured Markdown note (summary, key points, action items, quotes) with an LLM. Claude by default; set NOTES_PROVIDER for openai, gemini or ollama",
     ),
+    notes_dir: Path | None = typer.Option(
+        None,
+        "--notes-dir",
+        envvar="NOTES_DIR",
+        help="Folder for --notes, e.g. your Obsidian inbox. Notes get vault-style names like 'release-planning-2026-10-16.md'. Default: next to the transcript",
+    ),
     list_devices: bool = typer.Option(
         False,
         "--list-devices",
@@ -267,6 +284,13 @@ def main(
             err=True,
         )
         raise typer.Exit(2)
+
+    # Check the notes folder now, not after a meeting has been recorded
+    if notes_dir is not None:
+        notes_dir = notes_dir.expanduser()
+        if notes and not notes_dir.is_dir():
+            typer.echo(f"Error: notes folder not found: {notes_dir}", err=True)
+            raise typer.Exit(2)
 
     # 5. Parse options
     boost_words = tuple(w.strip() for w in boost.split(",") if w.strip()) if boost else ()
@@ -367,7 +391,7 @@ def main(
                 output.write(transcript, fmt, target, title="live_recording", force=True)
                 typer.echo(f"Live transcript written to {target}")
                 if notes:
-                    write_notes_file(transcript, target)
+                    write_notes_file(transcript, target, notes_dir)
             return
         except (config.ConfigError, TranscriptionError) as error:
             typer.echo(f"Error: {error}", err=True)
@@ -416,7 +440,7 @@ def main(
                                     typer.echo(f"Audio length: {minutes:.1f} min")
                                 typer.echo(f"Transcript written to {target}")
                                 if notes:
-                                    write_notes_file(transcript, target)
+                                    write_notes_file(transcript, target, notes_dir)
             else:
                 file = Path(item)
                 with optimized_audio_source(file, compress=compress) as audio_path:
@@ -437,7 +461,7 @@ def main(
                             typer.echo(f"Audio length: {minutes:.1f} min")
                         typer.echo(f"Transcript written to {target}")
                         if notes:
-                            write_notes_file(transcript, target)
+                            write_notes_file(transcript, target, notes_dir)
         except (TranscriptionError, FileExistsError, OSError) as error:
             typer.echo(f"Error ({item}): {error}", err=True)
             raise typer.Exit(1)
