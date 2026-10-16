@@ -1,6 +1,6 @@
 [project]
 name = "audioscribe"
-version = "0.3.0"
+version = "0.4.0"
 description = "CLI that turns any speech (meetings, audio books, videos, live sound) into text, subtitles, JSON and AI notes, with AssemblyAI or local Whisper"
 readme = "README.md"
 license = "MIT"
@@ -33,6 +33,11 @@ dependencies = [
     "typer>=0.27.2",
     "yt-dlp>=2026.8.19",
 ]
+
+[project.urls]
+Homepage = "https://github.com/EslamSife/audioscribe"
+Issues = "https://github.com/EslamSife/audioscribe/issues"
+Changelog = "https://github.com/EslamSife/audioscribe/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # Local speaker labels for Whisper. Heavy: pulls in PyTorch.

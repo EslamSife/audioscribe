@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
+
+First public release on PyPI.
 
 ### Added
 

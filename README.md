@@ -42,8 +42,20 @@ When an option is not supported, the tool says so instead of ignoring it silentl
 
 ## Installation
 
-You need Python 3.11 or newer and [uv](https://docs.astral.sh/uv/) (a fast Python package
-manager). From a clone of this repository:
+You need Python 3.11 or newer. The easiest way is [uv](https://docs.astral.sh/uv/) (a fast
+Python package manager), which installs the `transcribe` command on your PATH:
+
+```sh
+uv tool install audioscribe              # core
+uv tool install 'audioscribe[openai]'    # also notes with GPT, Gemini or Ollama
+uv tool install 'audioscribe[all]'       # everything, including local speaker labels (large)
+transcribe doctor                        # check your setup
+```
+
+`pipx install audioscribe` works too. The examples below use `uv run transcribe`, which is how
+you run it from a clone; after `uv tool install`, type just `transcribe`.
+
+From a clone of this repository:
 
 ```sh
 uv sync                  # core: AssemblyAI, local Whisper, live mode, links, Claude notes
