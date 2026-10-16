@@ -1,12 +1,14 @@
 [project]
-name = "transcribe"
-version = "0.2.0"
-description = "Fast, modular CLI for transcribing audio/video to text, markdown, subtitles, and JSON via AssemblyAI or Local Whisper"
+name = "audioscribe"
+version = "0.3.0"
+description = "CLI that turns any speech (meetings, audio books, videos, live sound) into text, subtitles, JSON and AI notes, with AssemblyAI or local Whisper"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Eslam Sife", email = "eslamsife91@gmail.com" }
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 keywords = ["transcription", "speech-to-text", "assemblyai", "whisper", "subtitles", "srt", "vtt", "audio", "cli"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -14,6 +16,9 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
@@ -21,6 +26,7 @@ dependencies = [
     "anthropic>=1.3.0",
     "assemblyai>=1.0.0",
     "faster-whisper>=1.2.1",
+    "numpy>=1.26.0",
     "python-dotenv>=1.0.0",
     "rich>=13.0.0",
     "sounddevice>=0.5.6",
@@ -29,32 +35,24 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-local = [
-    "faster-whisper>=1.0.0",
-]
-live = [
-    "sounddevice>=0.5.0",
-    "numpy>=1.26.0",
-]
-url = [
-    "yt-dlp>=2024.0.0",
-]
+# Local speaker labels for Whisper. Heavy: pulls in PyTorch.
 speakers = [
-    "pyannote.audio>=3.1.0",
+    "pyannote.audio>=4.0,<5",
 ]
-all = [
-    "faster-whisper>=1.0.0",
-    "sounddevice>=0.5.0",
-    "numpy>=1.26.0",
-    "yt-dlp>=2024.0.0",
-    "openai>=3.31.0",
-]
+# Notes with GPT, Gemini, Ollama or any OpenAI-compatible server
 openai = [
     "openai>=3.31.0",
+]
+all = [
+    "audioscribe[speakers,openai]",
 ]
 
 [project.scripts]
 transcribe = "transcribe.cli:app"
+
+[tool.uv.build-backend]
+# The PyPI name is 'audioscribe'; the import package and command stay 'transcribe'
+module-name = "transcribe"
 
 [build-system]
 requires = ["uv_build>=0.12.7,<0.13.0"]
@@ -68,7 +66,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]

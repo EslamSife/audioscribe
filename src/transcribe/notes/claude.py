@@ -12,6 +12,7 @@ _FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "cla
 class ClaudeNotesProvider:
     def __init__(self, model: str = DEFAULT_MODEL, api_key: str | None = None) -> None:
         self.model = model
+        self.label = f"Claude ({model})"
         # None lets the SDK find credentials itself (ANTHROPIC_API_KEY or an `ant auth login` profile)
         self._api_key = api_key
 
@@ -38,7 +39,9 @@ class ClaudeNotesProvider:
             ) as stream:
                 message = stream.get_final_message()
         except TypeError as error:
-            # The SDK raises a plain TypeError when it finds no credentials at all
+            # The SDK has no error class for "no credentials at all", only a plain
+            # TypeError ("Could not resolve authentication method"). A test runs
+            # the real SDK without a key, so a changed message fails CI, not users.
             if "authentication" not in str(error):
                 raise
             raise _missing_key_error()

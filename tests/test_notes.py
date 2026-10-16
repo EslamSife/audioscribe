@@ -212,3 +212,26 @@ def test_claude_adapter_missing_credentials_is_explained_but_other_type_errors_a
     patcher, _ = _patch_claude_stream(error=TypeError("unexpected keyword argument 'x'"))
     with patcher, pytest.raises(TypeError, match="unexpected keyword"):
         ClaudeNotesProvider().complete("sys", "user")
+
+
+def test_claude_missing_key_is_detected_with_the_real_sdk(monkeypatch, tmp_path):
+    """Runs the real SDK with no credentials anywhere, so a changed SDK error fails this test."""
+    import os
+
+    for name in list(os.environ):
+        if name.startswith("ANTHROPIC_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    # Should anything still find a key, the request goes nowhere instead of to the real API
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
+
+    with pytest.raises(TranscriptionError, match="API key is missing"):
+        ClaudeNotesProvider().complete("system", "user")
+
+
+def test_providers_say_where_the_transcript_goes():
+    assert ClaudeNotesProvider(model="m").label == "Claude (m)"
+    assert OpenAICompatibleNotesProvider("qwen", "k", OLLAMA_BASE_URL).label == (
+        f"qwen at {OLLAMA_BASE_URL}"
+    )

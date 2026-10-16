@@ -5,6 +5,9 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache/
+.ruff_cache/
+.coverage
 
 # Virtual environments
 .venv
@@ -12,9 +15,6 @@ wheels/
 # Secrets
 .env
 
-# Personal recordings / generated transcript outputs
+# Recordings and transcripts the tool writes by default (they can hold private conversations)
 live_session*
-podcast_test*
-computer_audio.md
-This_Is_How_Elon_Musk_*
 *.wav

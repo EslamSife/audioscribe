@@ -1,65 +1,91 @@
-# transcribe
+# audioscribe
 
-Modular CLI for turning audio/video files, YouTube/web video URLs, or live microphone and computer audio into accurate transcripts, summaries, and subtitles using AssemblyAI or Local Whisper.
+A command-line tool that turns any speech into text: meetings, audio books, podcasts, lectures,
+YouTube videos, or live sound from your microphone and computer. It writes plain text, Markdown,
+subtitles (SRT, VTT) or JSON, and can ask an LLM to write structured notes from the transcript.
+
+It works with two engines:
+
+- **AssemblyAI** (cloud): needs an API key, adds summaries, chapters and speaker labels.
+- **Local Whisper** (`--provider whisper`): runs fully on your computer with
+  [faster-whisper](https://github.com/SYSTRAN/faster-whisper). No key, nothing is uploaded.
+
+The package is called `audioscribe`; the command you type is `transcribe`.
 
 ## Features
 
-- 🌐 **Direct YouTube & Web Video Transcription**: Pass any YouTube, Vimeo, or web URL directly to transcribe without downloading videos first.
-- ⚡ **Dual Engine**: Cloud transcription with **AssemblyAI** or 100% offline, free transcription with **Local Whisper** (`--provider whisper`).
-- 🔴 **Live Microphone & System Audio**: Real-time speech-to-text from your mic or internal computer audio (Teams, Zoom, browser tabs). Phrases are split on natural speech pauses using Silero VAD, with a live in-place preview line and crash-safe incremental saving.
-- 🎙️ **Meeting Mode**: Merge two devices (`--device "BlackHole" --mix-device "MacBook"`) to capture the other participants and your own mic in one transcript.
-- 📝 **AI Notes** (`--notes`): After transcribing, Claude writes a structured Markdown note: summary, key points, action items, and timestamped quotes.
-- 🎞️ **In-Flight Audio Preprocessing**: Auto-extracts and downsamples video/audio using FFmpeg for 10× faster uploads.
-- 👥 **Speaker Diarization**: Separates and labels speakers. Cloud via AssemblyAI, or fully local via pyannote for the Whisper provider.
-- 🧠 **AI Intelligence**: Summaries, auto topic chapters, and custom word boost.
-- 🌍 **Multi-Language**: Explicit language selection or automatic spoken language detection.
-- 📦 **Rich Output Formats**: `txt`, `md` (Markdown), `srt` (SubRip), `vtt` (WebVTT), and `json`.
-- 📁 **Batch Processing & Stdout Streaming**: Handle multiple files or pipe outputs directly to tools like `jq`.
+- **Files and links**: audio and video files, plus YouTube and other sites that
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports. A link to a video inside a playlist
+  transcribes only that video.
+- **Live mode**: transcribe your microphone or computer audio (Zoom, Teams, a browser tab) as
+  people speak. Each finished line is saved right away, so a crash does not lose the session.
+- **Meeting mode**: merge two devices (`--device "BlackHole" --mix-device "MacBook"`) to capture
+  the other people and your own microphone in one transcript.
+- **Final pass**: live text is a fast draft. `--final-model` transcribes the saved recording
+  again with a bigger, more accurate model when you stop.
+- **AI notes** (`--notes`): summary, key points, action items and quotes, written by Claude,
+  GPT, Gemini or a local Ollama model. Can save straight into an Obsidian folder.
+- **Speaker labels** (`--speakers`): AssemblyAI in the cloud, or locally with pyannote.
+- **Word boost** (`--boost`): tell the engine about names and terms it should expect.
+- **Formats**: `txt`, `md`, `srt`, `vtt`, `json`. Batch several files, or print to stdout.
 
----
+### What works where
 
-## Installation & Setup
+| Option | AssemblyAI file | AssemblyAI live | Whisper file | Whisper live |
+|---|---|---|---|---|
+| `--language`, `--auto-detect-language` | yes | yes | yes | yes |
+| `--boost` | yes | yes | yes | yes |
+| `--speakers` | yes | yes | yes (needs the `speakers` extra) | only with `--final-model` |
+| `--summarize`, `--chapters` | yes | no | no | no |
 
-### 1. Cloud Provider (AssemblyAI)
-Get a free API key at [AssemblyAI](https://www.assemblyai.com) and save it:
+When an option is not supported, the tool says so instead of ignoring it silently.
+
+## Installation
+
+You need Python 3.11 or newer and [uv](https://docs.astral.sh/uv/) (a fast Python package
+manager). From a clone of this repository:
 
 ```sh
-# Via CLI command:
-uv run transcribe config set-key "your-key"
-
-# Or via shell profile (~/.zshrc):
-export ASSEMBLYAI_API_KEY="your-key"
+uv sync                  # core: AssemblyAI, local Whisper, live mode, links, Claude notes
+uv sync --extra openai   # also notes with GPT, Gemini or Ollama
+uv sync --extra speakers # also local speaker labels (large: installs PyTorch)
+uv sync --all-extras     # everything
 ```
 
-### 2. Optional Extras
+Then run it with `uv run transcribe ...`.
+
+**Optional, but recommended:** install [ffmpeg](https://ffmpeg.org/). With it, video files and
+large audio files are converted to small mono audio before upload or transcription. Without it,
+files are used as they are.
+
+### AssemblyAI key
+
+Get a key at [assemblyai.com](https://www.assemblyai.com), then either:
 
 ```sh
-# YouTube & Web URL support:
-uv add yt-dlp
-# Or: uv sync --extra url
-
-# Local offline Whisper support:
-uv add faster-whisper
-# Or: uv sync --extra local
-
-# Live microphone & system audio recording:
-uv add sounddevice
-# Or: uv sync --extra live
-
-# Local speaker labels with the Whisper provider (heavy: downloads pyannote models):
-uv sync --extra speakers
-# Then create a token at https://huggingface.co/settings/tokens, accept the terms of
-# https://huggingface.co/pyannote/speaker-diarization-3.1, and export HF_TOKEN=your_token
-
-# Install everything:
-uv sync --extra all
+uv run transcribe config set-key        # asks for the key, so it stays out of your shell history
+export ASSEMBLYAI_API_KEY="your-key"    # or set it in your shell profile or a .env file
 ```
 
-### 3. AI Notes (`--notes`)
+`config set-key` saves the key in `~/.config/transcribe/config.json`, readable only by you.
+Check it with `uv run transcribe config show`.
 
-The `--notes` flag sends the finished transcript to an LLM and saves a structured note
-(summary, key points, action items, quotes). Claude is the default. Pick another provider with
-environment variables (or a `.env` file):
+### Local speaker labels
+
+Local labels use [pyannote](https://github.com/pyannote/pyannote-audio):
+
+1. `uv sync --extra speakers`
+2. Create a token at <https://huggingface.co/settings/tokens>.
+3. Accept the terms of <https://huggingface.co/pyannote/speaker-diarization-3.1>.
+4. `export HF_TOKEN=your_token`
+
+If labelling fails, you still get the transcript, with a warning.
+
+### AI notes (`--notes`)
+
+`--notes` sends the finished transcript to an LLM and saves a structured note. The tool prints
+where the transcript is sent. Claude is the default. Choose another provider with environment
+variables (or a `.env` file):
 
 | Variable | Meaning |
 |---|---|
@@ -82,13 +108,14 @@ export NOTES_PROVIDER=gemini NOTES_MODEL="<model>" GEMINI_API_KEY="your-key"
 export NOTES_PROVIDER=ollama NOTES_MODEL="qwen2.5:7b"
 ```
 
-`openai`, `gemini` and `ollama` need the extra package: `uv sync --extra openai`.
+The notes settings are checked before anything is recorded, so a mistake never costs you a
+meeting.
 
-**Ollama and long meetings:** Ollama may keep only the last 4,096 tokens of a long prompt
+**Ollama and long recordings:** Ollama may keep only the last 4,096 tokens of a long prompt
 (about 15 minutes of speech) and still answer normally. `transcribe` warns you when the model
 read much less than it was sent. Start Ollama with a bigger window to fix it:
-`OLLAMA_CONTEXT_LENGTH=32768 ollama serve`. Small local models also write weaker notes than
-Claude or GPT, especially action items, so check them before you trust them.
+`OLLAMA_CONTEXT_LENGTH=32768 ollama serve`. Small local models also write weaker notes,
+especially action items, so check them before you trust them.
 
 **Notes straight into Obsidian:** `--notes-dir` (or the `NOTES_DIR` environment variable) saves
 the note into a folder such as your vault inbox, with a name like
@@ -96,125 +123,110 @@ the note into a folder such as your vault inbox, with a name like
 `type`, `status`, `tags`, `sources`, `related`) and ends with a `## Related` section. An existing
 note is never overwritten, and a missing folder stops the run before any recording starts.
 
+## Usage
+
+### Files and links
+
 ```sh
-export NOTES_DIR=~/workspace/Sife_Notes/00_Inbox
-uv run transcribe live --provider whisper --model base --device "BlackHole" --mix-device "MacBook" \
-  --final-model small --notes
+# AssemblyAI (cloud)
+uv run transcribe meeting.m4a
+
+# Fully offline with local Whisper
+uv run transcribe audiobook-chapter1.mp3 --provider whisper --model small
+
+# Subtitles from a video
+uv run transcribe lecture.mp4 --format vtt
+
+# A YouTube video, with summary and chapters
+uv run transcribe "https://www.youtube.com/watch?v=..." --format md --summarize --chapters
+
+# Several files into one folder
+uv run transcribe rec1.mp3 rec2.wav --out ./transcripts/
+
+# Speaker labels, language, and names the engine should expect
+uv run transcribe interview.mp3 --format md --speakers --language es --boost "Kubernetes,Helm"
+
+# JSON to another tool
+uv run transcribe clip.mp3 --format json --stdout | jq '.segments'
 ```
 
----
+Whisper models, from fast to accurate: `tiny`, `base`, `small`, `medium`, `large-v3`, `turbo`.
+The first use of a model downloads it.
 
-## Usage Examples
+### Live mode
 
-### 🌐 1. YouTube & Web Video Transcription
 ```sh
-# Transcribe and summarize a YouTube video directly from its URL
-uv run transcribe "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --format md --summarize --chapters
-
-# Generate WebVTT subtitles directly from a web video link
-uv run transcribe "https://www.youtube.com/watch?v=..." --format vtt
-```
-
-### 🖥️ 2. Live Microphone & System/Browser Audio
-```sh
-# List all audio input devices (microphones & virtual loopbacks)
+# List input devices (microphones and virtual devices like BlackHole)
 uv run transcribe --list-devices
 
-# Live microphone transcription
-uv run transcribe live --format md --out live_notes.md
+# Your microphone
+uv run transcribe live --format md --out notes.md
 
-# Record computer/browser audio (e.g. Teams, Zoom, YouTube tab) via virtual loopback:
-uv run transcribe live --device "BlackHole" --format md --out meeting_notes.md
-
-# Offline live transcription with Local Whisper (no API key, phrase-by-phrase output)
+# Computer audio through a virtual device, fully offline
 uv run transcribe live --provider whisper --model base --device "BlackHole" --format md
 
-# Meeting mode: capture the call audio AND your own microphone together
-uv run transcribe live --provider whisper --model base --device "BlackHole" --mix-device "MacBook" --format md
-
-# Automatic meeting minutes: transcribe the meeting, then let Claude write the notes
-uv run transcribe live --provider whisper --model base --device "BlackHole" --mix-device "MacBook" --notes
-```
-
-Live transcripts are saved line by line while you record, so a crash or sleep never
-loses the session. If the output file name is taken, a numbered name is used instead.
-
-The recorded audio is also saved as a `.wav` next to the transcript (turn this off with
-`--no-save-audio`). The live text is a fast draft; add `--final-model` to transcribe the whole
-recording again with a bigger model after you press Ctrl+C. The final pass can also add speaker
-labels (`--speakers`). If it fails or you skip it with Ctrl+C, the live transcript is kept.
-
-```sh
-# Live draft with 'base', then a more accurate final pass with 'small' (plus notes from the final text)
+# Meeting mode: the call audio AND your microphone, then a better final pass and notes
 uv run transcribe live --provider whisper --model base --device "BlackHole" --mix-device "MacBook" \
   --final-model small --notes
+```
 
-# Or re-transcribe a saved recording later, like any other file
+To record computer audio on macOS you need a virtual audio device such as
+[BlackHole](https://github.com/ExistentialAudio/BlackHole). On Windows, "Stereo Mix" does the
+same job. With local Whisper, live mode finds pauses in speech with the Silero voice activity
+model that ships with faster-whisper.
+
+Press Ctrl+C to stop. The recording is saved as a `.wav` next to the transcript (turn this off
+with `--no-save-audio`). If the output name is taken, a numbered name is used instead. If the
+final pass fails or you skip it with a second Ctrl+C, the live transcript is kept. You can also
+transcribe a saved recording later, like any file:
+
+```sh
 uv run transcribe live_session.wav --provider whisper --model small --format md --notes
 ```
 
-### 📁 3. Local Files & Dual Engines
-```sh
-# Basic transcription (AssemblyAI cloud)
-uv run transcribe meeting.m4a
+A file that is really named `live` or `config` needs a path, for example `./live`.
 
-# 100% Offline with Local Whisper (no API key required)
-uv run transcribe talk.mp3 --provider whisper --model turbo
+### Output formats
 
-# Video subtitle extraction with automatic FFmpeg downsampling
-uv run transcribe lecture.mp4 --format vtt
+- `txt`: plain text, or `Speaker 1: ...` lines when speakers are labelled.
+- `md`: Markdown with duration, language, confidence, summary, chapters and timestamps.
+- `srt`: SubRip subtitles.
+- `vtt`: WebVTT subtitles for web video players.
+- `json`: everything above as structured data.
 
-# Batch process multiple recordings into a directory
-uv run transcribe rec1.mp3 rec2.wav --out ./transcripts/
+## Privacy and consent
 
-# Markdown output with timestamps, speaker labels, summaries & chapters
-uv run transcribe interview.mp3 --format md --speakers --summarize --chapters
+Recording people can be regulated where you live, and many places require everyone's consent.
+Ask before you record a meeting.
 
-# Fully local speaker labels (Whisper + pyannote, needs the 'speakers' extra and HF_TOKEN)
-uv run transcribe interview.mp3 --provider whisper --model base --speakers --format md
+With AssemblyAI, your audio is uploaded to AssemblyAI. With `--notes` and a cloud provider, the
+transcript is sent to that provider. For nothing to leave your computer, use
+`--provider whisper` together with `NOTES_PROVIDER=ollama`. Recordings and transcripts are saved
+as normal files, so treat them like any private document.
 
-# Transcribe a file and let Claude write structured notes next to it
-uv run transcribe lecture.mp4 --provider whisper --model base --notes
-
-# Multi-language & auto-detection
-uv run transcribe speech.mp3 --language es
-uv run transcribe foreign.mp3 --auto-detect-language
-
-# Custom vocabulary boost
-uv run transcribe devops.mp3 --boost "Kubernetes,Docker,AssemblyAI,Prometheus"
-
-# Stream JSON output to stdout for CLI piping
-uv run transcribe clip.mp3 --format json --stdout | jq '.summary'
-```
-
-### Supported Formats
-
-- `txt`: Plain text or speaker dialogue (`Speaker A: ...`).
-- `md`: Rich Markdown with duration, language, confidence, executive summaries, chapters, and timestamps.
-- `srt`: SubRip subtitle file with millisecond timecodes.
-- `vtt`: WebVTT subtitle file for HTML5 and web video players.
-- `json`: Structured JSON containing metadata, summaries, chapters, and time-stamped segments.
-
----
-
-## Development & CI
+## Development
 
 ```sh
-# Run the test suite
-uv run pytest -v
-
-# Run linting
-uv run ruff check .
+uv sync --all-extras --dev
+uv run pytest            # tests
+uv run ruff check .      # lint
+uv run ruff format .     # format
 ```
 
----
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Architecture
 
-The project adheres to strict protocol isolation:
-- Provider implementations ([`AssemblyAIProvider`](file:///Users/eslam.sife/workspace/transcribe/src/transcribe/providers/assemblyai.py) and [`LocalWhisperProvider`](file:///Users/eslam.sife/workspace/transcribe/src/transcribe/providers/whisper.py)) implement the [`TranscriptionProvider`](file:///Users/eslam.sife/workspace/transcribe/src/transcribe/providers/base.py) protocol.
-- Vendor types never leak outside their adapter modules.
-- New transcription backends can be added in a single self-contained adapter file.
+- Each engine is one adapter ([`providers/assemblyai.py`](src/transcribe/providers/assemblyai.py),
+  [`providers/whisper.py`](src/transcribe/providers/whisper.py)) behind the small
+  [`TranscriptionProvider`](src/transcribe/providers/base.py) protocol. Notes providers follow the
+  same shape in [`notes/`](src/transcribe/notes/).
+- Vendor types never leave their adapter. Everything else works with the plain data classes in
+  [`transcription/model.py`](src/transcribe/transcription/model.py).
+- Live mode lives in [`live.py`](src/transcribe/live.py). The logic that cuts audio into phrases
+  is a separate, pure class in [`audio/phrases.py`](src/transcribe/audio/phrases.py), so it can be
+  tested without audio devices.
 
+## License
 
-
+[MIT](LICENSE)

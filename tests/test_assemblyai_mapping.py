@@ -80,3 +80,41 @@ def test_chapters_and_summary_are_mapped():
     assert transcript.chapters[0].end_ms == 5000
     assert transcript.chapters[0].gist == "Kick-off"
     assert transcript.chapters[1].headline == "Next Steps"
+
+
+def test_every_option_builds_a_config_the_real_sdk_accepts(tmp_path):
+    """The real TranscriptionConfig is built, so a renamed SDK name fails here, not for users."""
+    from unittest.mock import create_autospec, patch
+
+    import assemblyai as aai
+
+    from transcribe.providers.assemblyai import AssemblyAIProvider
+    from transcribe.transcription.model import TranscriptionOptions
+
+    transcriber = create_autospec(aai.Transcriber, instance=True)
+    transcriber.transcribe.return_value = vendor_result(
+        status=aai.TranscriptStatus.completed, id="job-1"
+    )
+    audio = tmp_path / "a.mp3"
+    audio.write_bytes(b"x")
+
+    with patch("assemblyai.Transcriber", return_value=transcriber):
+        provider = AssemblyAIProvider("key")
+    provider.transcribe(
+        audio,
+        options=TranscriptionOptions(
+            speakers=True,
+            speakers_expected=2,
+            language="es",
+            summarize=True,
+            chapters=True,
+            boost_words=("Helm",),
+        ),
+    )
+
+    sent = transcriber.transcribe.call_args.args[1]
+    assert isinstance(sent, aai.TranscriptionConfig)
+    assert sent.summarization is True
+    assert sent.auto_chapters is True
+    assert sent.speaker_labels is True
+    assert sent.language_code == "es"

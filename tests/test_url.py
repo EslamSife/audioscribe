@@ -51,6 +51,8 @@ def test_fetch_audio_from_url_success(tmp_path):
         audio_path, title = fetch_audio_from_url("https://youtube.com/watch?v=sample")
         assert audio_path.exists()
         assert title == "Sample_Video_Title"
+        # A watch?v=...&list=... link must fetch the one video, not the whole playlist
+        assert mock_ydl_cls.call_args[0][0]["noplaylist"] is True
         # Cleanup
         audio_path.parent.rmdir() if not any(audio_path.parent.iterdir()) else None
 

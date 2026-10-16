@@ -200,7 +200,7 @@ def _live_session_that_records():
     """A fake live session that writes a small WAV wherever the CLI asks it to record."""
     import wave
 
-    def fake_run(on_turn=None, record_to=None):
+    def fake_run(on_turn=None, record_to=None, **kwargs):
         with wave.open(str(record_to), "wb") as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)
@@ -294,6 +294,7 @@ def test_cli_notes_dir_writes_vault_style_note(tmp_path, monkeypatch):
     with (
         patch("transcribe.cli.get_provider"),
         patch("transcribe.cli.transcribe_file", return_value=DUMMY_TRANSCRIPT),
+        patch("transcribe.notes.get_notes_provider", return_value=MagicMock(label="Fake")),
         patch("transcribe.notes.generate_notes", return_value=Notes("# Release Planning\n")),
         patch("transcribe.cli.date") as mock_date,
     ):
@@ -312,4 +313,50 @@ def test_cli_missing_notes_dir_stops_before_recording(tmp_path):
 
     assert result.exit_code == 2
     assert "notes folder not found" in result.output
+    session_cls.assert_not_called()
+
+
+def test_cli_config_set_key_asks_for_the_key_when_not_given(tmp_path, monkeypatch):
+    cfg_file = tmp_path / "config.json"
+    monkeypatch.setattr(config, "get_config_path", lambda: cfg_file)
+
+    result = runner.invoke(app, ["config", "set-key"], input="typed-secret-key\n")
+
+    assert result.exit_code == 0
+    assert "typed-secret-key" not in result.output  # hidden while typing
+    assert "typed-secret-key" in cfg_file.read_text()
+
+
+def test_cli_warns_about_options_whisper_cannot_use(tmp_path):
+    audio = make_test_audio(tmp_path)
+    with (
+        patch("transcribe.cli.get_provider"),
+        patch("transcribe.cli.transcribe_file", return_value=DUMMY_TRANSCRIPT),
+    ):
+        result = runner.invoke(app, [str(audio), "--provider", "whisper", "--summarize"])
+
+    assert result.exit_code == 0
+    assert "--summarize only works" in result.output
+
+
+def test_cli_prints_transcript_warnings(tmp_path, monkeypatch):
+    monkeypatch.setenv(config.API_KEY_ENV, "mock-key")
+    audio = make_test_audio(tmp_path)
+    warned = Transcript(text="hi", warnings=("Speaker labels skipped: no GPU",))
+    with patch("transcribe.cli.transcribe_file", return_value=warned):
+        result = runner.invoke(app, [str(audio)])
+
+    assert result.exit_code == 0
+    assert "Speaker labels skipped: no GPU" in result.output
+
+
+def test_cli_bad_notes_setup_stops_before_recording(monkeypatch):
+    monkeypatch.setenv("NOTES_PROVIDER", "ollama")
+    monkeypatch.delenv("NOTES_MODEL", raising=False)
+    monkeypatch.setattr("transcribe.notes.factory.load_dotenv", lambda: None)
+    with patch("transcribe.cli.LiveTranscriptionSession") as session_cls:
+        result = runner.invoke(app, ["live", "--notes"])
+
+    assert result.exit_code == 2
+    assert "NOTES_MODEL is not set" in result.output
     session_cls.assert_not_called()

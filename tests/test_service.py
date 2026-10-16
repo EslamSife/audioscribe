@@ -2,16 +2,18 @@ from pathlib import Path
 
 import pytest
 
-from transcribe.transcription.model import Transcript, TranscriptionError
+from transcribe.transcription.model import Transcript, TranscriptionError, TranscriptionOptions
 from transcribe.transcription.service import transcribe_file
 
 
 class FakeProvider:
     def __init__(self):
         self.received = None
+        self.calls = 0
 
-    def transcribe(self, path: Path, *, speakers: bool) -> Transcript:
-        self.received = (path, speakers)
+    def transcribe(self, path: Path, *, options: TranscriptionOptions) -> Transcript:
+        self.calls += 1
+        self.received = (path, options)
         return Transcript(text="hello")
 
 
@@ -24,9 +26,24 @@ def make_audio(tmp_path: Path, name: str = "a.mp3") -> Path:
 def test_happy_path_passes_file_and_options_to_provider(tmp_path):
     provider = FakeProvider()
     path = make_audio(tmp_path)
-    result = transcribe_file(path, provider, speakers=True)
+    options = TranscriptionOptions(speakers=True, language="es")
+    result = transcribe_file(path, provider, options=options)
     assert result.text == "hello"
-    assert provider.received == (path, True)
+    assert provider.received == (path, options)
+
+
+def test_a_type_error_inside_the_provider_is_not_retried(tmp_path):
+    """A bug in a provider must surface once, not start a second (paid) transcription."""
+
+    class BrokenProvider(FakeProvider):
+        def transcribe(self, path, *, options):
+            self.calls += 1
+            raise TypeError("bug deep inside the provider")
+
+    provider = BrokenProvider()
+    with pytest.raises(TypeError):
+        transcribe_file(make_audio(tmp_path), provider)
+    assert provider.calls == 1
 
 
 def test_missing_file_is_rejected(tmp_path):

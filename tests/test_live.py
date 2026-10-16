@@ -1,70 +1,121 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
 from transcribe.live import LiveTranscriptionSession
-from transcribe.transcription.model import TranscriptionError
+from transcribe.transcription.model import TranscriptionError, TranscriptionOptions
 
 
 def test_live_session_missing_drivers_raises_error():
     session = LiveTranscriptionSession(api_key="mock-key")
-    with patch.dict("sys.modules", {"sounddevice": None, "pyaudio": None}):
+    with patch.dict("sys.modules", {"sounddevice": None}):
         with pytest.raises(TranscriptionError, match="sounddevice"):
             list(session.get_microphone_stream())
 
 
+def fake_streaming_client():
+    """A fake with the real StreamingClient's method signatures (autospec), so a
+    call the real SDK would reject, like connect() without parameters, fails here too."""
+    import assemblyai.streaming.v3 as v3
+
+    client = create_autospec(v3.StreamingClient, instance=True)
+    handlers = {}
+
+    client.on.side_effect = lambda event, handler: handlers.__setitem__(event, handler)
+    return client, handlers
+
+
+def turn_event(text, start_ms=1200, end_ms=1900, speaker=None, end_of_turn=True):
+    return SimpleNamespace(
+        transcript=text,
+        end_of_turn=end_of_turn,
+        words=[
+            SimpleNamespace(start=start_ms, end=start_ms + 100),
+            SimpleNamespace(start=end_ms - 100, end=end_ms),
+        ],
+        speaker_label=speaker,
+    )
+
+
 def test_live_session_streams_and_builds_transcript():
-    session = LiveTranscriptionSession(api_key="mock-key", language="en")
+    import assemblyai.streaming.v3 as v3
 
-    # Mock audio chunk stream
-    def fake_audio_stream():
-        yield b"chunk1"
-        yield b"chunk2"
+    session = LiveTranscriptionSession(api_key="mock-key", language="es")
+    client, handlers = fake_streaming_client()
 
-    # Mock StreamingClient
-    mock_client = MagicMock()
-    registered_handlers = {}
+    def answer(chunk):
+        handlers[v3.RealTimeEvents.Turn](client, turn_event(f"Heard {chunk.hex()}", speaker="A"))
 
-    def mock_on(event_type):
-        def decorator(handler):
-            registered_handlers[event_type] = handler
-            return handler
-
-        return decorator
-
-    mock_client.on = mock_on
-
-    with (
-        patch("assemblyai.streaming.v3.StreamingClient", return_value=mock_client),
-        patch("assemblyai.streaming.v3.RealTimeEvents") as mock_events,
-    ):
-        mock_events.Turn = "Turn"
-        mock_events.Error = "Error"
-
-        def simulate_turns(chunk):
-            # When client.stream is called, trigger turn event
-            turn_handler = registered_handlers.get("Turn")
-            if turn_handler:
-                turn_handler(
-                    mock_client,
-                    SimpleNamespace(text=f"Heard {chunk.decode()}", start=0, end=1000),
-                )
-
-        mock_client.stream.side_effect = simulate_turns
-
-        turns_received = []
+    client.stream.side_effect = answer
+    received = []
+    with patch("assemblyai.streaming.v3.StreamingClient", return_value=client):
         transcript = session.run(
-            audio_stream=fake_audio_stream(),
-            on_turn=lambda text, s, e: turns_received.append(text),
+            audio_stream=iter([b"\x01\x00" * 1600, b"\x02\x00" * 1600]),
+            on_turn=received.append,
+            options=TranscriptionOptions(language="es", speakers=True, boost_words=("Helm",)),
         )
 
-        assert mock_client.connect.called
-        assert mock_client.disconnect.called
-        assert len(turns_received) == 2
-        assert "Heard chunk1" in transcript.text
-        assert "Heard chunk2" in transcript.text
-        assert len(transcript.segments) == 2
+    params = client.connect.call_args.args[0]
+    assert isinstance(params, v3.StreamingParameters)
+    assert params.sample_rate == 16000
+    assert params.encoding == v3.Encoding.pcm_s16le
+    assert params.language_code == "es"
+    assert params.speaker_labels is True
+    assert params.keyterms_prompt == ["Helm"]
+    assert client.disconnect.called
+
+    assert len(received) == 2
+    # Times come from the turn's words, not from fields a turn doesn't have
+    assert (transcript.segments[0].start_ms, transcript.segments[0].end_ms) == (1200, 1900)
+    assert transcript.segments[0].speaker == "Speaker A"
+    assert transcript.audio_duration_s == 0  # 0.2s of audio
+    assert transcript.language_code == "es"
+
+
+def test_live_session_ignores_partial_turns():
+    import assemblyai.streaming.v3 as v3
+
+    session = LiveTranscriptionSession(api_key="mock-key")
+    client, handlers = fake_streaming_client()
+    client.stream.side_effect = lambda chunk: handlers[v3.RealTimeEvents.Turn](
+        client, turn_event("still talk", end_of_turn=False)
+    )
+    with patch("assemblyai.streaming.v3.StreamingClient", return_value=client):
+        transcript = session.run(audio_stream=iter([b"\x01\x00" * 1600]))
+    assert transcript.segments == ()
+    assert transcript.language_code is None  # unknown, not a guessed "en"
+
+
+def test_live_session_keeps_what_was_heard_when_the_device_fails():
+    import assemblyai.streaming.v3 as v3
+
+    session = LiveTranscriptionSession(api_key="mock-key")
+    client, handlers = fake_streaming_client()
+    client.stream.side_effect = lambda chunk: handlers[v3.RealTimeEvents.Turn](
+        client, turn_event("before the failure")
+    )
+
+    def failing_stream():
+        yield b"\x01\x00" * 1600
+        raise TranscriptionError("Audio device error: unplugged")
+
+    with patch("assemblyai.streaming.v3.StreamingClient", return_value=client):
+        transcript = session.run(audio_stream=failing_stream())
+    assert transcript.text == "before the failure"
+
+
+def test_live_session_fails_when_the_device_never_opens():
+    session = LiveTranscriptionSession(api_key="mock-key")
+    client, _ = fake_streaming_client()
+
+    def failing_stream():
+        raise TranscriptionError("Audio device error: invalid device")
+        yield
+
+    with patch("assemblyai.streaming.v3.StreamingClient", return_value=client):
+        with pytest.raises(TranscriptionError, match="invalid device"):
+            session.run(audio_stream=failing_stream())
 
 
 def test_list_audio_devices_mocked():

@@ -14,4 +14,7 @@ class Completion:
 class NotesProvider(Protocol):
     """Any LLM that can answer one system + user prompt. Adapters raise TranscriptionError."""
 
+    # Who gets the transcript, shown to the user, e.g. "Claude (claude-opus-5-5)"
+    label: str
+
     def complete(self, system: str, user: str) -> Completion: ...

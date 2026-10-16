@@ -49,3 +49,5 @@ class Transcript:
     chapters: tuple[Chapter, ...] = ()
     language_code: str | None = None
     confidence: float | None = None
+    # Problems that did not stop the transcription, e.g. speaker labels that failed
+    warnings: tuple[str, ...] = ()

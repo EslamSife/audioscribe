@@ -89,9 +89,9 @@ class TestLiveIncrementalWrite:
         out_file = tmp_path / "live.md"
         mid_session_content = {}
 
-        def fake_run(on_turn=None, record_to=None):
-            on_turn("first sentence", 0, 1000)
-            on_turn("second sentence", 61000, 62000)
+        def fake_run(on_turn=None, record_to=None, **kwargs):
+            on_turn(Segment("first sentence", 0, 1000))
+            on_turn(Segment("second sentence", 61000, 62000))
             # Capture what is on disk before the final render
             mid_session_content["text"] = out_file.read_text()
             return Transcript(text="first sentence second sentence")

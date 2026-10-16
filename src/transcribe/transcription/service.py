@@ -24,14 +24,9 @@ def transcribe_file(
     provider: TranscriptionProvider,
     *,
     options: TranscriptionOptions | None = None,
-    speakers: bool = False,
 ) -> Transcript:
     validate_audio_file(path)
-    opts = options or TranscriptionOptions(speakers=speakers)
-    try:
-        return provider.transcribe(path, options=opts)
-    except TypeError:
-        return provider.transcribe(path, speakers=opts.speakers)
+    return provider.transcribe(path, options=options or TranscriptionOptions())
 
 
 def validate_audio_file(path: Path) -> None:

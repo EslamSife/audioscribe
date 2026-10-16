@@ -11,6 +11,7 @@ class OpenAICompatibleNotesProvider:
         self._api_key = api_key
         # None means the official OpenAI endpoint
         self.base_url = base_url
+        self.label = f"{model} at {base_url or 'OpenAI'}"
 
     def complete(self, system: str, user: str) -> Completion:
         try:

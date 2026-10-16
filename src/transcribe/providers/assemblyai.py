@@ -21,9 +21,8 @@ class AssemblyAIProvider:
         path: Path,
         *,
         options: TranscriptionOptions | None = None,
-        speakers: bool = False,
     ) -> Transcript:
-        opts = options or TranscriptionOptions(speakers=speakers)
+        opts = options or TranscriptionOptions()
         config_kwargs: dict = {}
 
         if opts.speakers or opts.speakers_expected is not None:
@@ -38,8 +37,8 @@ class AssemblyAIProvider:
 
         if opts.summarize:
             config_kwargs["summarization"] = True
-            config_kwargs["summary_model"] = aai.SummarizeModel.informative
-            config_kwargs["summary_type"] = aai.SummarizeType.bullets
+            config_kwargs["summary_model"] = aai.SummarizationModel.informative
+            config_kwargs["summary_type"] = aai.SummarizationType.bullets
 
         if opts.chapters:
             config_kwargs["auto_chapters"] = True

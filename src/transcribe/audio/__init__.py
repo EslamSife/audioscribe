@@ -1,4 +1,4 @@
-from .metrics import assess_audio_level, calculate_dbfs, calculate_rms_and_peak, render_vu_meter
+from .metrics import calculate_dbfs, calculate_rms_and_peak
 from .preprocess import is_ffmpeg_available, optimized_audio_source, prepare_audio
 from .url import fetch_audio_from_url, is_url, sanitize_title, url_audio_source
 
@@ -12,6 +12,4 @@ __all__ = [
     "url_audio_source",
     "calculate_rms_and_peak",
     "calculate_dbfs",
-    "assess_audio_level",
-    "render_vu_meter",
 ]

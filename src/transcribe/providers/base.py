@@ -10,5 +10,4 @@ class TranscriptionProvider(Protocol):
         path: Path,
         *,
         options: TranscriptionOptions | None = None,
-        speakers: bool = False,
     ) -> Transcript: ...

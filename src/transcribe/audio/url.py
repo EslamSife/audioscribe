@@ -50,6 +50,8 @@ def fetch_audio_from_url(url: str) -> tuple[Path, str]:
 
     ydl_opts = {
         "format": "bestaudio/best",
+        # A link like watch?v=...&list=... means this one video, not the whole playlist
+        "noplaylist": True,
         "outtmpl": outtmpl,
         "postprocessors": postprocessors,
         "quiet": True,
