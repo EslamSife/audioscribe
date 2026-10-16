@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- `transcribe doctor` checks the setup (ffmpeg, keys, audio devices, speaker labels, yt-dlp,
+  notes and Ollama) and prints the fix for each problem.
+
 ### Fixed
 
 - Local Whisper now skips silence in files and in the live final pass (faster-whisper's

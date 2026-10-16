@@ -125,6 +125,17 @@ note is never overwritten, and a missing folder stops the run before any recordi
 
 ## Usage
 
+### Check your setup
+
+```sh
+uv run transcribe doctor
+```
+
+It checks ffmpeg, your AssemblyAI key, audio devices (and whether one carries computer audio),
+local speaker labels, yt-dlp, and the `--notes` setup, including whether Ollama is running and has
+your model. Each problem comes with the command that fixes it. It exits with an error only when
+something you set up is broken, for example `NOTES_DIR` pointing to a missing folder.
+
 ### Files and links
 
 ```sh
@@ -184,7 +195,7 @@ transcribe a saved recording later, like any file:
 uv run transcribe live_session.wav --provider whisper --model small --format md --notes
 ```
 
-A file that is really named `live` or `config` needs a path, for example `./live`.
+A file that is really named `live`, `doctor` or `config` needs a path, for example `./live`.
 
 ### Output formats
 

@@ -160,6 +160,30 @@ def handle_config_command(args: list[str]) -> None:
     raise typer.Exit(2)
 
 
+def run_doctor() -> None:
+    from rich.table import Table
+
+    from transcribe.doctor import FAIL, OK, WARN, run_checks
+
+    style = {OK: "[green]ok[/green]", WARN: "[yellow]warn[/yellow]", FAIL: "[red]fail[/red]"}
+    checks = run_checks()
+    table = Table.grid(padding=(0, 2))
+    table.add_column(no_wrap=True)
+    table.add_column(style="bold", no_wrap=True)
+    table.add_column()
+    for check in checks:
+        fix = f"\n[dim]Fix: {check.fix}[/dim]" if check.fix and check.status != OK else ""
+        table.add_row(style[check.status], check.name, check.detail + fix)
+    console.print(table)
+    failed = [c for c in checks if c.status == FAIL]
+    if failed:
+        console.print(f"\n[red]{len(failed)} problem(s) will break a run. Fix them first.[/red]")
+        raise typer.Exit(1)
+    console.print(
+        "\n[green]Nothing broken.[/green] Warnings only matter for the features they name."
+    )
+
+
 def run_live(
     *,
     provider: str,
@@ -341,7 +365,7 @@ def transcribe_items(
 def main(
     files: list[str] = typer.Argument(
         None,
-        help="Audio/video files or URLs (YouTube, etc.) to transcribe, 'live' for microphone, or 'config'. A file really named 'live' or 'config' needs a path, e.g. ./live",
+        help="Audio/video files or URLs (YouTube, etc.) to transcribe, 'live' for microphone, 'doctor' to check your setup, or 'config'. A file really named 'live', 'doctor' or 'config' needs a path, e.g. ./live",
     ),
     provider: str = typer.Option(
         "assemblyai",
@@ -488,6 +512,9 @@ def main(
     first_arg = files[0].strip().lower()
     if first_arg == "config":
         handle_config_command(files[1:])
+        return
+    if first_arg == "doctor":
+        run_doctor()
         return
 
     if fmt not in output.FORMATS:
