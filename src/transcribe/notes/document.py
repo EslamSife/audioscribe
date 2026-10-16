@@ -16,15 +16,19 @@ MAX_SLUG_LENGTH = 60
 EM_DASH = "—"
 
 
-def render(note: str, *, sources: list[str], today: date) -> str:
-    """Return the full file content: frontmatter, the note, and an empty Related section."""
+def render(note: str, *, sources: list[str], today: date, template: str = "general") -> str:
+    """Return the full file content: frontmatter, the note, and an empty Related section.
+
+    A work template (e.g. 'standup') is added as a tag, so the vault can list those notes.
+    """
+    tags = TAGS if template == "general" else (*TAGS, template)
     frontmatter = [
         "---",
         f"created: {today.isoformat()}",
         f"updated: {today.isoformat()}",
         f"type: {NOTE_TYPE}",
         "status: inbox",
-        f"tags: [{', '.join(TAGS)}]",
+        f"tags: [{', '.join(tags)}]",
         f"sources: [{', '.join(json.dumps(s, ensure_ascii=False) for s in sources)}]",
         "related: []",
         "---",

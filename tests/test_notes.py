@@ -235,3 +235,33 @@ def test_providers_say_where_the_transcript_goes():
     assert OpenAICompatibleNotesProvider("qwen", "k", OLLAMA_BASE_URL).label == (
         f"qwen at {OLLAMA_BASE_URL}"
     )
+
+
+# --- templates ---
+
+
+@pytest.mark.parametrize(
+    ("template", "sections"),
+    [
+        ("general", ["## Summary", "## Key Points", "## Action Items", "## Notable Quotes"]),
+        ("standup", ["## Updates", "## Blockers", "- [ ]"]),
+        ("design-review", ["## Options Discussed", "## Decisions", "## Draft ADR"]),
+        ("incident", ["## Timeline", "## Root Cause", "## Follow-ups", "blameless"]),
+    ],
+)
+def test_each_template_asks_for_its_sections_and_keeps_the_shared_rules(template, sections):
+    provider = FakeProvider(Completion(text="# Note\n", input_tokens=10_000))
+
+    generate_notes(TRANSCRIPT, title="call", provider=provider, template=template)
+
+    system, _ = provider.prompts[0]
+    assert "Never invent facts" in system
+    for section in sections:
+        assert section in system
+
+
+def test_unknown_template_is_refused_with_the_valid_names():
+    with pytest.raises(TranscriptionError, match="standup, design-review, incident"):
+        generate_notes(
+            TRANSCRIPT, title="call", provider=FakeProvider(Completion(text="x")), template="retro"
+        )

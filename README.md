@@ -117,6 +117,21 @@ read much less than it was sent. Start Ollama with a bigger window to fix it:
 `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`. Small local models also write weaker notes,
 especially action items, so check them before you trust them.
 
+**Templates for work meetings:** `--template` picks the note's sections. Action items become
+Markdown tasks (`- [ ] Owner: task`), and the template name is added as a tag.
+
+| Template | Sections |
+|---|---|
+| `general` (default) | Summary, key points, action items, quotes |
+| `standup` | Updates per person (done, next, blockers), blockers, action items |
+| `design-review` | Context, options with pros and cons, decisions, open questions, action items, a draft ADR (Architecture Decision Record) |
+| `incident` | Summary, timeline, impact, root cause, mitigation and fix, follow-ups, open questions (blameless) |
+
+```sh
+uv run transcribe live --provider whisper --device "BlackHole" --mix-device "MacBook" \
+  --final-model small --notes --template incident
+```
+
 **Notes straight into Obsidian:** `--notes-dir` (or the `NOTES_DIR` environment variable) saves
 the note into a folder such as your vault inbox, with a name like
 `release-planning-2026-10-16.md`. Every note starts with frontmatter (`created`, `updated`,

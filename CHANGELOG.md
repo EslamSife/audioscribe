@@ -6,6 +6,9 @@
 
 - `transcribe doctor` checks the setup (ffmpeg, keys, audio devices, speaker labels, yt-dlp,
   notes and Ollama) and prints the fix for each problem.
+- `--template` for `--notes`: `standup`, `design-review` (with a draft ADR) and `incident`
+  (timeline, root cause, follow-ups). Action items are Markdown tasks, and the template is
+  added as a tag.
 
 ### Fixed
 

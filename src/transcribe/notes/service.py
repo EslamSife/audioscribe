@@ -4,28 +4,7 @@ from transcribe.transcription.model import Transcript, TranscriptionError
 
 from .base import Completion, NotesProvider
 from .factory import get_notes_provider
-
-SYSTEM_PROMPT = """You turn raw audio transcripts into clear, structured Markdown notes.
-
-Rules:
-- Write the note in the same language as the transcript.
-- Be faithful to the transcript. Never invent facts that are not in it.
-- Transcripts come from imperfect speech recognition: fix obvious recognition
-  errors from context, but do not change the meaning.
-- Keep timestamps in [MM:SS] form when you quote or reference a moment.
-- Do not use em dashes; use commas, colons or periods instead.
-
-Produce exactly these sections:
-# <A short descriptive title>
-## Summary
-2-4 sentences: what this recording is about and its main message.
-## Key Points
-The important ideas as short bullet points, in the order they appear.
-## Action Items
-Concrete tasks, decisions, or follow-ups mentioned. Write "None" if there are none.
-## Notable Quotes
-Up to 5 memorable or important quotes, each with its [MM:SS] timestamp.
-"""
+from .templates import DEFAULT, system_prompt
 
 # English text averages about 4 characters per token. Only used to notice a
 # model that read far less than we sent; most other languages use more tokens
@@ -40,19 +19,26 @@ class Notes:
 
 
 def generate_notes(
-    transcript: Transcript, title: str, provider: NotesProvider | None = None
+    transcript: Transcript,
+    title: str,
+    provider: NotesProvider | None = None,
+    template: str = DEFAULT,
 ) -> Notes:
-    """Ask the configured LLM for a structured Markdown note about the transcript."""
+    """Ask the configured LLM for a structured Markdown note about the transcript.
+
+    `template` picks the note's sections: general, standup, design-review or incident.
+    """
+    system = system_prompt(template)
     text = _timestamped_text(transcript).strip()
     if not text:
         raise TranscriptionError("Transcript is empty, nothing to make notes from.")
 
     user = f"Recording name: {title}\n\nTranscript:\n{text}"
-    result = (provider or get_notes_provider()).complete(SYSTEM_PROMPT, user)
+    result = (provider or get_notes_provider()).complete(system, user)
     note = result.text.strip()
     if not note:
         raise TranscriptionError("The model returned an empty note.")
-    return Notes(text=note + "\n", warnings=_warnings(result, sent_chars=len(SYSTEM_PROMPT + user)))
+    return Notes(text=note + "\n", warnings=_warnings(result, sent_chars=len(system + user)))
 
 
 def _warnings(result: Completion, sent_chars: int) -> tuple[str, ...]:

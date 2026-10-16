@@ -50,3 +50,10 @@ def test_filename_keeps_long_titles_short_and_whole_words():
     slug = name.removesuffix("-2026-10-16.md")
     assert len(slug) <= document.MAX_SLUG_LENGTH
     assert slug.endswith("integration")
+
+
+def test_render_tags_work_templates_but_not_the_general_one():
+    assert "tags: [meeting, transcript, incident]\n" in document.render(
+        NOTE, sources=[], today=TODAY, template="incident"
+    )
+    assert "tags: [meeting, transcript]\n" in document.render(NOTE, sources=[], today=TODAY)

@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
@@ -31,28 +31,41 @@ def is_local(provider: str) -> bool:
     return provider.strip().lower() in LOCAL_PROVIDERS
 
 
-def write_notes_file(transcript, target: Path, notes_dir: Path | None, notes_provider) -> None:
+@dataclass(frozen=True)
+class NotesPlan:
+    """How --notes runs: the LLM, the folder (None = next to the transcript) and the template."""
+
+    provider: object
+    folder: Path | None
+    template: str
+
+
+def write_notes_file(transcript, target: Path, plan: NotesPlan) -> None:
     """Turn the transcript into a structured note with the configured LLM.
 
-    The note goes into `notes_dir` (e.g. an Obsidian inbox) when given, otherwise next to the transcript.
+    The note goes into `plan.folder` (e.g. an Obsidian inbox) when given, otherwise next to the transcript.
     """
     from transcribe.notes import document, generate_notes
 
     with console.status(
-        f"[bold cyan]Sending the transcript to {notes_provider.label} for notes...[/bold cyan]",
+        f"[bold cyan]Sending the transcript to {plan.provider.label} for notes...[/bold cyan]",
         spinner="dots",
     ):
-        notes = generate_notes(transcript, title=target.stem, provider=notes_provider)
+        notes = generate_notes(
+            transcript, title=target.stem, provider=plan.provider, template=plan.template
+        )
     for warning in notes.warnings:
         console.print(f"[yellow]Warning: {warning}[/yellow]")
 
     today = date.today()
-    if notes_dir is not None:
+    if plan.folder is not None:
         name = document.filename(notes.text, today=today, fallback=target.stem)
-        notes_target = output.unique_path(notes_dir / name, sep="-")
+        notes_target = output.unique_path(plan.folder / name, sep="-")
     else:
         notes_target = output.unique_path(target.with_name(f"{target.stem}_notes.md"))
-    content = document.render(notes.text, sources=[str(target.resolve())], today=today)
+    content = document.render(
+        notes.text, sources=[str(target.resolve())], today=today, template=plan.template
+    )
     notes_target.write_text(content, encoding="utf-8")
     typer.echo(f"Notes written to {notes_target}")
 
@@ -198,8 +211,7 @@ def run_live(
     save_audio: bool,
     final_model: str | None,
     compress: bool,
-    notes_provider,
-    notes_dir: Path | None,
+    notes: NotesPlan | None,
 ) -> None:
     if final_model and (stdout or not save_audio):
         typer.echo(
@@ -287,8 +299,8 @@ def run_live(
         return
     output.write(transcript, fmt, target, title="live_recording", force=True)
     typer.echo(f"Live transcript written to {target}")
-    if notes_provider is not None:
-        write_notes_file(transcript, target, notes_dir, notes_provider)
+    if notes is not None:
+        write_notes_file(transcript, target, notes)
 
 
 def save_transcript(
@@ -298,15 +310,14 @@ def save_transcript(
     title: str,
     target: Path,
     force: bool,
-    notes_provider,
-    notes_dir: Path | None,
+    notes: NotesPlan | None,
 ) -> None:
     output.write(transcript, fmt, target, title=title, force=force)
     if transcript.audio_duration_s is not None:
         typer.echo(f"Audio length: {transcript.audio_duration_s / 60:.1f} min")
     typer.echo(f"Transcript written to {target}")
-    if notes_provider is not None:
-        write_notes_file(transcript, target, notes_dir, notes_provider)
+    if notes is not None:
+        write_notes_file(transcript, target, notes)
 
 
 def transcribe_items(
@@ -319,8 +330,7 @@ def transcribe_items(
     force: bool,
     stdout: bool,
     compress: bool,
-    notes_provider,
-    notes_dir: Path | None,
+    notes: NotesPlan | None,
 ) -> None:
     is_batch = len(items) > 1
     for item in items:
@@ -353,8 +363,7 @@ def transcribe_items(
                 title=title,
                 target=resolve_target_path(source, out, fmt, is_batch=is_batch),
                 force=force,
-                notes_provider=notes_provider,
-                notes_dir=notes_dir,
+                notes=notes,
             )
         except (TranscriptionError, FileExistsError, OSError) as error:
             typer.echo(f"Error ({item}): {error}", err=True)
@@ -470,6 +479,12 @@ def main(
         "--notes",
         help="After transcribing, write a structured Markdown note (summary, key points, action items, quotes) with an LLM. Claude by default; set NOTES_PROVIDER for openai, gemini or ollama",
     ),
+    template: str = typer.Option(
+        "general",
+        "--template",
+        "-t",
+        help="Sections of the --notes note: general, standup, design-review (with a draft ADR) or incident (timeline, root cause, follow-ups)",
+    ),
     notes_dir: Path | None = typer.Option(
         None,
         "--notes-dir",
@@ -525,20 +540,24 @@ def main(
         raise typer.Exit(2)
 
     # Check the notes setup now, not after a meeting has been recorded
-    notes_provider = None
+    notes_plan = None
     if notes:
         if notes_dir is not None:
             notes_dir = notes_dir.expanduser()
             if not notes_dir.is_dir():
                 typer.echo(f"Error: notes folder not found: {notes_dir}", err=True)
                 raise typer.Exit(2)
-        from transcribe.notes import get_notes_provider
+        from transcribe.notes import get_notes_provider, templates
 
         try:
-            notes_provider = get_notes_provider()
+            notes_plan = NotesPlan(get_notes_provider(), notes_dir, templates.check(template))
         except TranscriptionError as error:
             typer.echo(f"Error: {error}", err=True)
             raise typer.Exit(2)
+    elif template != "general":
+        console.print(
+            "[yellow]Note: --template only applies with --notes, so it is ignored.[/yellow]"
+        )
 
     boost_words = tuple(w.strip() for w in boost.split(",") if w.strip()) if boost else ()
     options = TranscriptionOptions(
@@ -566,8 +585,7 @@ def main(
                 save_audio=save_audio,
                 final_model=final_model,
                 compress=compress,
-                notes_provider=notes_provider,
-                notes_dir=notes_dir,
+                notes=notes_plan,
             )
             return
 
@@ -589,6 +607,5 @@ def main(
         force=force,
         stdout=stdout,
         compress=compress,
-        notes_provider=notes_provider,
-        notes_dir=notes_dir,
+        notes=notes_plan,
     )

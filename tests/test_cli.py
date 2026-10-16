@@ -360,3 +360,42 @@ def test_cli_bad_notes_setup_stops_before_recording(monkeypatch):
     assert result.exit_code == 2
     assert "NOTES_MODEL is not set" in result.output
     session_cls.assert_not_called()
+
+
+def test_cli_template_reaches_the_notes_and_the_tags(tmp_path, monkeypatch):
+    from transcribe.notes import Notes
+
+    monkeypatch.setenv(config.API_KEY_ENV, "mock-key")
+    audio = make_test_audio(tmp_path)
+
+    with (
+        patch("transcribe.cli.get_provider"),
+        patch("transcribe.cli.transcribe_file", return_value=DUMMY_TRANSCRIPT),
+        patch("transcribe.notes.get_notes_provider", return_value=MagicMock(label="Fake")),
+        patch("transcribe.notes.generate_notes", return_value=Notes("# Standup\n")) as notes,
+    ):
+        result = runner.invoke(app, [str(audio), "--notes", "--template", "Standup"])
+
+    assert result.exit_code == 0, result.output
+    assert notes.call_args.kwargs["template"] == "standup"
+    note = tmp_path / "meeting_notes.md"
+    assert "tags: [meeting, transcript, standup]" in note.read_text()
+
+
+def test_cli_unknown_template_stops_before_recording(monkeypatch):
+    with patch("transcribe.notes.get_notes_provider", return_value=MagicMock(label="Fake")):
+        result = runner.invoke(app, ["live", "--notes", "--template", "retro"])
+    assert result.exit_code == 2
+    assert "Unknown note template 'retro'" in result.output
+
+
+def test_cli_template_without_notes_says_it_is_ignored(tmp_path, monkeypatch):
+    monkeypatch.setenv(config.API_KEY_ENV, "mock-key")
+    audio = make_test_audio(tmp_path)
+    with (
+        patch("transcribe.cli.get_provider"),
+        patch("transcribe.cli.transcribe_file", return_value=DUMMY_TRANSCRIPT),
+    ):
+        result = runner.invoke(app, [str(audio), "--template", "incident"])
+    assert result.exit_code == 0
+    assert "--template only applies with --notes" in result.output
