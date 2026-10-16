@@ -20,13 +20,15 @@ console = Console(stderr=True)
 
 
 def write_notes_file(transcript, target: Path) -> None:
-    """Turn the transcript into a structured note with Claude and save it next to the transcript."""
+    """Turn the transcript into a structured note with the configured LLM and save it next to the transcript."""
     from transcribe.notes import generate_notes
 
-    with console.status("[bold cyan]Creating notes with Claude...[/bold cyan]", spinner="dots"):
-        note = generate_notes(transcript, title=target.stem)
+    with console.status("[bold cyan]Creating notes...[/bold cyan]", spinner="dots"):
+        notes = generate_notes(transcript, title=target.stem)
+    for warning in notes.warnings:
+        console.print(f"[yellow]Warning: {warning}[/yellow]")
     notes_target = output.unique_path(target.with_name(f"{target.stem}_notes.md"))
-    notes_target.write_text(note, encoding="utf-8")
+    notes_target.write_text(notes.text, encoding="utf-8")
     typer.echo(f"Notes written to {notes_target}")
 
 
@@ -188,7 +190,7 @@ def main(
     notes: bool = typer.Option(
         False,
         "--notes",
-        help="After transcribing, use Claude to write a structured Markdown note (summary, key points, action items, quotes)",
+        help="After transcribing, write a structured Markdown note (summary, key points, action items, quotes) with an LLM. Claude by default; set NOTES_PROVIDER for openai, gemini or ollama",
     ),
     list_devices: bool = typer.Option(
         False,

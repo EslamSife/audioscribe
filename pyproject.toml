@@ -47,6 +47,10 @@ all = [
     "sounddevice>=0.5.0",
     "numpy>=1.26.0",
     "yt-dlp>=2024.0.0",
+    "openai>=3.31.0",
+]
+openai = [
+    "openai>=3.31.0",
 ]
 
 [project.scripts]

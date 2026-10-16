@@ -4,7 +4,7 @@ from pathlib import Path
 from transcribe import output
 from transcribe.diarization import assign_speakers
 from transcribe.live import mix_chunks
-from transcribe.notes import _timestamped_text
+from transcribe.notes.service import _timestamped_text
 from transcribe.transcription.model import Segment, Transcript
 
 

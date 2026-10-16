@@ -57,12 +57,38 @@ uv sync --extra all
 
 ### 3. AI Notes (`--notes`)
 
-The `--notes` flag sends the finished transcript to Claude and saves a structured note
-(summary, key points, action items, quotes). It needs a Claude API key:
+The `--notes` flag sends the finished transcript to an LLM and saves a structured note
+(summary, key points, action items, quotes). Claude is the default. Pick another provider with
+environment variables (or a `.env` file):
+
+| Variable | Meaning |
+|---|---|
+| `NOTES_PROVIDER` | `claude` (default), `openai`, `gemini` or `ollama` |
+| `NOTES_MODEL` | Model name. Required for every provider except `claude` (default `claude-opus-5-5`) |
+| `NOTES_BASE_URL` | Server address, to override the preset (e.g. LM Studio, OpenRouter) |
+| `NOTES_API_KEY` | Key for that server. Falls back to `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` |
 
 ```sh
+# Claude (default)
 export ANTHROPIC_API_KEY="your-key"   # get one at https://console.anthropic.com/settings/keys
+
+# GPT
+export NOTES_PROVIDER=openai NOTES_MODEL="<model>" OPENAI_API_KEY="your-key"
+
+# Gemini (through its OpenAI-compatible endpoint)
+export NOTES_PROVIDER=gemini NOTES_MODEL="<model>" GEMINI_API_KEY="your-key"
+
+# Fully local and private: Ollama on your machine, no key, nothing leaves your computer
+export NOTES_PROVIDER=ollama NOTES_MODEL="qwen2.5:7b"
 ```
+
+`openai`, `gemini` and `ollama` need the extra package: `uv sync --extra openai`.
+
+**Ollama and long meetings:** Ollama may keep only the last 4,096 tokens of a long prompt
+(about 15 minutes of speech) and still answer normally. `transcribe` warns you when the model
+read much less than it was sent. Start Ollama with a bigger window to fix it:
+`OLLAMA_CONTEXT_LENGTH=32768 ollama serve`. Small local models also write weaker notes than
+Claude or GPT, especially action items, so check them before you trust them.
 
 ---
 
