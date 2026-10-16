@@ -9,7 +9,7 @@ from transcribe.audio.preprocess import optimized_audio_source
 from transcribe.audio.url import is_url, url_audio_source
 from transcribe.live import LiveTranscriptionSession, print_audio_devices_table
 from transcribe.providers.factory import PROVIDERS, get_provider
-from transcribe.transcription.model import TranscriptionError, TranscriptionOptions
+from transcribe.transcription.model import Transcript, TranscriptionError, TranscriptionOptions
 from transcribe.transcription.service import transcribe_file, validate_audio_file
 
 app = typer.Typer(
@@ -28,6 +28,40 @@ def write_notes_file(transcript, target: Path) -> None:
     notes_target = output.unique_path(target.with_name(f"{target.stem}_notes.md"))
     notes_target.write_text(note, encoding="utf-8")
     typer.echo(f"Notes written to {notes_target}")
+
+
+def run_final_pass(
+    audio_path: Path,
+    provider: str,
+    model: str,
+    options: TranscriptionOptions,
+    *,
+    compress: bool,
+) -> Transcript | None:
+    """Transcribe the saved live recording again with a bigger model.
+
+    Returns None when the pass fails, is skipped with Ctrl+C, or hears nothing,
+    so the caller keeps the live transcript and the meeting is never lost.
+    """
+    try:
+        engine = get_provider(provider, model=model)
+        with console.status(
+            f"[bold cyan]Final pass: transcribing the full recording with '{model}' "
+            "(this can take a few minutes, Ctrl+C keeps the live transcript)...[/bold cyan]",
+            spinner="dots",
+        ):
+            with optimized_audio_source(audio_path, compress=compress) as source:
+                final = transcribe_file(source, engine, options=options)
+    except KeyboardInterrupt:
+        console.print("[yellow]Final pass skipped, keeping the live transcript.[/yellow]")
+        return None
+    except (config.ConfigError, TranscriptionError, OSError) as error:
+        console.print(f"[yellow]Final pass failed, keeping the live transcript: {error}[/yellow]")
+        return None
+    if not final.text.strip():
+        console.print("[yellow]Final pass found no speech, keeping the live transcript.[/yellow]")
+        return None
+    return final
 
 
 def resolve_target_path(
@@ -141,6 +175,16 @@ def main(
         "--mix-device",
         help="Second input device to merge with --device in live mode (e.g. capture BlackHole + your microphone for full meeting audio)",
     ),
+    save_audio: bool = typer.Option(
+        True,
+        "--save-audio/--no-save-audio",
+        help="Live mode: save the recorded audio as a .wav file next to the transcript",
+    ),
+    final_model: str | None = typer.Option(
+        None,
+        "--final-model",
+        help="Live mode: after you stop, transcribe the saved audio again with this bigger, more accurate model (e.g. 'small', 'turbo'). The result replaces the live transcript",
+    ),
     notes: bool = typer.Option(
         False,
         "--notes",
@@ -236,12 +280,22 @@ def main(
 
     # 6. Handle 'transcribe live' syntax
     if first_arg == "live":
+        if final_model and (stdout or not save_audio):
+            typer.echo(
+                "Error: --final-model needs the saved audio, so it can't be used with --stdout or --no-save-audio.",
+                err=True,
+            )
+            raise typer.Exit(2)
         try:
             is_offline = provider.strip().lower() in ("whisper", "local", "offline")
+            # The final pass works on the full recording, so it can still label speakers
+            final_options = options
             if is_offline and options.speakers:
-                console.print(
-                    "[yellow]Note: speaker labels are not supported in local live mode; ignoring --speakers.[/yellow]"
-                )
+                if not final_model:
+                    console.print(
+                        "[yellow]Note: speaker labels are not supported in local live mode; ignoring --speakers. "
+                        "Use --final-model to add them after the recording.[/yellow]"
+                    )
                 options = replace(options, speakers=False)
 
             session = LiveTranscriptionSession(
@@ -256,12 +310,17 @@ def main(
             # append every finished line to it immediately so a crash mid-session
             # loses nothing. The final formatted render replaces the file at the end.
             target: Path | None = None
+            audio_path: Path | None = None
             on_turn = None
             if not stdout:
                 target = out or Path(f"live_session.{fmt}")
                 if not force:
                     target = output.unique_path(target)
                 target.parent.mkdir(parents=True, exist_ok=True)
+                if save_audio:
+                    audio_path = target.with_suffix(".wav")
+                    if not force:
+                        audio_path = output.unique_path(audio_path)
 
                 def on_turn(text: str, start_ms: int, end_ms: int) -> None:
                     mins, secs = divmod(start_ms // 1000, 60)
@@ -277,10 +336,27 @@ def main(
                 if (model or "").strip() not in ("", "tiny", "tiny.en"):
                     preview_engine = get_provider(provider, model="tiny")
                 transcript = session.run_offline(
-                    engine, options=options, on_turn=on_turn, preview_provider=preview_engine
+                    engine,
+                    options=options,
+                    on_turn=on_turn,
+                    preview_provider=preview_engine,
+                    record_to=audio_path,
                 )
             else:
-                transcript = session.run(on_turn=on_turn)
+                transcript = session.run(on_turn=on_turn, record_to=audio_path)
+
+            if audio_path is not None and audio_path.exists():
+                typer.echo(f"Audio saved to {audio_path}")
+                if final_model:
+                    final = run_final_pass(
+                        audio_path,
+                        provider,
+                        final_model,
+                        final_options,
+                        compress=compress and not is_offline,
+                    )
+                    if final is not None:
+                        transcript = final
 
             if stdout:
                 rendered = output.render(transcript, fmt, title="live_recording")

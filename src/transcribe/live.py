@@ -2,7 +2,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, Generator
+from typing import Any, Callable, Generator, Iterator
 
 from rich.console import Console
 from rich.table import Table
@@ -150,6 +150,29 @@ def mix_chunks(chunk_a: bytes, chunk_b: bytes) -> bytes:
         a = np.pad(a, (0, size - len(a)))
         b = np.pad(b, (0, size - len(b)))
     return np.clip(a + b, -32768, 32767).astype(np.int16).tobytes()
+
+
+def record_stream(
+    stream: Iterator[bytes], wav_path: Path, sample_rate: int
+) -> Generator[bytes, None, None]:
+    """Pass audio chunks through unchanged while saving them to a 16-bit mono WAV file.
+
+    The live text is only a fast draft; keeping the audio lets a bigger model
+    transcribe the whole meeting again afterwards. `wave` rewrites the header
+    after every write, and we flush each chunk to disk, so the file stays
+    playable with all audio so far even if the process dies mid-meeting.
+    """
+    import wave
+
+    wav_path.parent.mkdir(parents=True, exist_ok=True)
+    with wav_path.open("wb") as f, wave.open(f, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        for chunk in stream:
+            wf.writeframes(chunk)
+            f.flush()
+            yield chunk
 
 
 def print_audio_devices_table() -> None:
@@ -338,6 +361,7 @@ class LiveTranscriptionSession:
         self,
         audio_stream: Generator[bytes, None, None] | None = None,
         on_turn: Callable[[str, int, int], None] | None = None,
+        record_to: Path | None = None,
     ) -> Transcript:
         """Run the live streaming session with audio quality monitoring and return the final Transcript."""
         import assemblyai.streaming.v3 as v3
@@ -345,6 +369,8 @@ class LiveTranscriptionSession:
         from transcribe.audio.metrics import calculate_dbfs, calculate_rms_and_peak
 
         stream_source = audio_stream or self.get_microphone_stream()
+        if record_to is not None:
+            stream_source = record_stream(stream_source, record_to, self.sample_rate)
         client = v3.StreamingClient(api_key=self.api_key)
 
         self.segments.clear()
@@ -437,6 +463,10 @@ class LiveTranscriptionSession:
                 client.disconnect()
             except Exception:
                 pass
+            # Closes the WAV recorder (if any) right away instead of at garbage collection
+            close = getattr(stream_source, "close", None)
+            if close is not None:
+                close()
 
         total_duration = int(time.time() - self._start_time)
         full_text = " ".join(s.text for s in self.segments)
@@ -455,6 +485,7 @@ class LiveTranscriptionSession:
         audio_stream: Generator[bytes, None, None] | None = None,
         on_turn: Callable[[str, int, int], None] | None = None,
         preview_provider: Any = None,
+        record_to: Path | None = None,
     ) -> Transcript:
         """Transcribe live audio phrase-by-phrase with low latency.
 
@@ -504,6 +535,8 @@ class LiveTranscriptionSession:
                 pass
 
         stream_source = audio_stream or self.get_microphone_stream()
+        if record_to is not None:
+            stream_source = record_stream(stream_source, record_to, self.sample_rate)
         dev_desc = f" (Device: {self.device})" if self.device is not None else ""
         if self.mix_device is not None:
             dev_desc = f" (Devices: {self.device} + {self.mix_device})"

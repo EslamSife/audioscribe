@@ -105,3 +105,36 @@ def test_resolve_device_id_not_found():
 
         with pytest.raises(TranscriptionError, match="not found"):
             resolve_device_id("NonExistentDevice")
+
+
+def test_record_stream_saves_wav_and_passes_chunks_through(tmp_path):
+    import wave
+
+    from transcribe.live import record_stream
+
+    wav_path = tmp_path / "sub" / "meeting.wav"
+    chunks = [b"\x01\x00" * 1600, b"\x02\x00" * 1600]
+
+    passed = list(record_stream(iter(chunks), wav_path, sample_rate=16000))
+
+    assert passed == chunks
+    with wave.open(str(wav_path), "rb") as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getsampwidth() == 2
+        assert wf.getframerate() == 16000
+        assert wf.readframes(wf.getnframes()) == b"".join(chunks)
+
+
+def test_record_stream_file_is_playable_before_it_is_closed(tmp_path):
+    """A crash mid-meeting must still leave a readable WAV with the audio so far."""
+    import wave
+
+    from transcribe.live import record_stream
+
+    wav_path = tmp_path / "meeting.wav"
+    recorder = record_stream(iter([b"\x01\x00" * 1600, b"\x02\x00" * 1600]), wav_path, 16000)
+    next(recorder)  # one chunk written, recorder still open
+
+    with wave.open(str(wav_path), "rb") as wf:
+        assert wf.getnframes() == 1600
+    recorder.close()

@@ -89,7 +89,7 @@ class TestLiveIncrementalWrite:
         out_file = tmp_path / "live.md"
         mid_session_content = {}
 
-        def fake_run(on_turn=None):
+        def fake_run(on_turn=None, record_to=None):
             on_turn("first sentence", 0, 1000)
             on_turn("second sentence", 61000, 62000)
             # Capture what is on disk before the final render

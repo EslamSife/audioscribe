@@ -101,6 +101,20 @@ uv run transcribe live --provider whisper --model base --device "BlackHole" --mi
 Live transcripts are saved line by line while you record, so a crash or sleep never
 loses the session. If the output file name is taken, a numbered name is used instead.
 
+The recorded audio is also saved as a `.wav` next to the transcript (turn this off with
+`--no-save-audio`). The live text is a fast draft; add `--final-model` to transcribe the whole
+recording again with a bigger model after you press Ctrl+C. The final pass can also add speaker
+labels (`--speakers`). If it fails or you skip it with Ctrl+C, the live transcript is kept.
+
+```sh
+# Live draft with 'base', then a more accurate final pass with 'small' (plus notes from the final text)
+uv run transcribe live --provider whisper --model base --device "BlackHole" --mix-device "MacBook" \
+  --final-model small --notes
+
+# Or re-transcribe a saved recording later, like any other file
+uv run transcribe live_session.wav --provider whisper --model small --format md --notes
+```
+
 ### 📁 3. Local Files & Dual Engines
 ```sh
 # Basic transcription (AssemblyAI cloud)

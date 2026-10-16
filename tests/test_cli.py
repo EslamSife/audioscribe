@@ -186,3 +186,97 @@ def test_cli_url_transcription(tmp_path, monkeypatch):
         assert result.exit_code == 0
         assert "yt_output.txt" in result.output
         assert out_target.exists()
+
+
+FINAL_TRANSCRIPT = Transcript(
+    text="Hello world, said clearly.",
+    segments=(Segment("Hello world, said clearly.", 0, 1000, speaker="Speaker 1"),),
+    audio_duration_s=5,
+    language_code="en",
+)
+
+
+def _live_session_that_records():
+    """A fake live session that writes a small WAV wherever the CLI asks it to record."""
+    import wave
+
+    def fake_run(on_turn=None, record_to=None):
+        with wave.open(str(record_to), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(b"\x00\x00" * 1600)
+        return DUMMY_TRANSCRIPT
+
+    session = MagicMock()
+    session.run.side_effect = fake_run
+    return session
+
+
+def test_cli_live_saves_audio_next_to_transcript(tmp_path):
+    out_file = tmp_path / "meeting.md"
+    with patch(
+        "transcribe.cli.LiveTranscriptionSession", return_value=_live_session_that_records()
+    ):
+        result = runner.invoke(app, ["live", "--out", str(out_file), "--format", "md"])
+
+    assert result.exit_code == 0
+    assert (tmp_path / "meeting.wav").exists()
+    assert "Audio saved to" in result.output
+
+
+def test_cli_live_final_pass_replaces_live_transcript(tmp_path):
+    out_file = tmp_path / "meeting.md"
+    with (
+        patch("transcribe.cli.LiveTranscriptionSession", return_value=_live_session_that_records()),
+        patch("transcribe.cli.get_provider") as mock_get_provider,
+        patch("transcribe.cli.transcribe_file", return_value=FINAL_TRANSCRIPT) as mock_transcribe,
+    ):
+        result = runner.invoke(
+            app,
+            ["live", "--out", str(out_file), "--format", "md", "--final-model", "small", "-s"],
+        )
+
+    assert result.exit_code == 0
+    mock_get_provider.assert_called_once_with("assemblyai", model="small")
+    assert mock_transcribe.call_args.kwargs["options"].speakers is True
+    text = out_file.read_text()
+    assert "said clearly" in text
+    assert "Speaker 1" in text
+
+
+def test_cli_live_final_pass_failure_keeps_live_transcript(tmp_path):
+    from transcribe.transcription.model import TranscriptionError
+
+    out_file = tmp_path / "meeting.md"
+    with (
+        patch("transcribe.cli.LiveTranscriptionSession", return_value=_live_session_that_records()),
+        patch("transcribe.cli.get_provider"),
+        patch("transcribe.cli.transcribe_file", side_effect=TranscriptionError("model broke")),
+    ):
+        result = runner.invoke(
+            app, ["live", "--out", str(out_file), "--format", "md", "--final-model", "small"]
+        )
+
+    assert result.exit_code == 0
+    assert "keeping the live transcript" in result.output
+    assert "Hello world." in out_file.read_text()
+
+
+def test_cli_live_no_save_audio_skips_recording(tmp_path):
+    out_file = tmp_path / "meeting.md"
+    session = MagicMock()
+    session.run.return_value = DUMMY_TRANSCRIPT
+    with patch("transcribe.cli.LiveTranscriptionSession", return_value=session):
+        result = runner.invoke(
+            app, ["live", "--out", str(out_file), "--format", "md", "--no-save-audio"]
+        )
+
+    assert result.exit_code == 0
+    assert session.run.call_args.kwargs["record_to"] is None
+
+
+def test_cli_live_final_model_needs_saved_audio():
+    result = runner.invoke(app, ["live", "--stdout", "--final-model", "small"])
+    assert result.exit_code == 2
+    assert "--final-model needs the saved audio" in result.output
