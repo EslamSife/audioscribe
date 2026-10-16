@@ -67,6 +67,36 @@ def test_whisper_sends_boost_words_as_hotwords(tmp_path):
     assert provider._model.transcribe.call_args.kwargs["hotwords"] == "Kubernetes, Helm"
 
 
+def test_whisper_skips_silence_by_default(tmp_path):
+    """Whisper invents text on silence, so files and the final pass filter it out."""
+    provider = LocalWhisperProvider(model_size="base")
+    audio = tmp_path / "test.mp3"
+    audio.write_bytes(b"audio")
+    provider._model = MagicMock()
+    provider._model.transcribe.return_value = ([], SimpleNamespace(duration=1.0, language="en"))
+
+    provider.transcribe(audio)
+
+    kwargs = provider._model.transcribe.call_args.kwargs
+    assert kwargs["vad_filter"] is True
+    # Keeps line ends from stretching over the silence that was cut out
+    assert kwargs["word_timestamps"] is True
+
+
+def test_whisper_keeps_silence_when_asked(tmp_path):
+    provider = LocalWhisperProvider(model_size="base")
+    audio = tmp_path / "test.mp3"
+    audio.write_bytes(b"audio")
+    provider._model = MagicMock()
+    provider._model.transcribe.return_value = ([], SimpleNamespace(duration=1.0, language="en"))
+
+    provider.transcribe(audio, options=TranscriptionOptions(skip_silence=False))
+
+    kwargs = provider._model.transcribe.call_args.kwargs
+    assert "vad_filter" not in kwargs
+    assert "word_timestamps" not in kwargs
+
+
 def test_whisper_checks_speaker_setup_before_transcribing(tmp_path, monkeypatch):
     """A missing HF_TOKEN must fail before a long transcription, not after it."""
     pytest.importorskip("pyannote.audio")
@@ -89,4 +119,11 @@ def test_hotwords_is_a_real_faster_whisper_parameter():
     from faster_whisper import WhisperModel
 
     params = inspect.signature(WhisperModel.transcribe).parameters
-    assert {"hotwords", "initial_prompt", "beam_size", "language"} <= params.keys()
+    assert {
+        "hotwords",
+        "initial_prompt",
+        "beam_size",
+        "language",
+        "vad_filter",
+        "word_timestamps",
+    } <= params.keys()

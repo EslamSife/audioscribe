@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Local Whisper now skips silence in files and in the live final pass (faster-whisper's
+  `vad_filter`). Without it, Whisper can invent text on silence, and it lost or changed words
+  after long pauses. Live phrases are already cut at pauses, so live mode is unchanged.
+
 ## 0.3.0
 
 First release prepared for open source, as `audioscribe` (the command stays `transcribe`).

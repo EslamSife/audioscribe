@@ -73,6 +73,11 @@ class LocalWhisperProvider:
             kwargs["hotwords"] = ", ".join(opts.boost_words)
         if opts.beam_size:
             kwargs["beam_size"] = opts.beam_size
+        if opts.skip_silence:
+            kwargs["vad_filter"] = True
+            # Without word times, faster-whisper can stretch a line's end over
+            # the silence it cut out; word times keep each line's end right
+            kwargs["word_timestamps"] = True
 
         raw_segments, info = model.transcribe(str(path), **kwargs)
         segments: list[Segment] = []

@@ -38,6 +38,10 @@ class TranscriptionOptions:
     # preview passes use 3 (RealtimeSTT's realtime default), final passes
     # keep the whisper default of 5.
     beam_size: int | None = None
+    # Drop silent parts before Whisper reads the audio (faster-whisper's Silero
+    # VAD filter), because Whisper invents text on silence. Live phrases are
+    # already cut at pauses, so live mode turns it off.
+    skip_silence: bool = True
 
 
 @dataclass(frozen=True)

@@ -17,9 +17,11 @@ class FakeEngine:
     def __init__(self, text: str) -> None:
         self.text = text
         self.calls = 0
+        self.options = []
 
     def transcribe(self, path, *, options):
         self.calls += 1
+        self.options.append(options)
         return Transcript(text=self.text, segments=(Segment(self.text, 0, 100),))
 
 
@@ -55,6 +57,16 @@ def test_spoken_phrase_becomes_one_timed_line(session):
     assert main.calls == 1
     assert transcript.audio_duration_s == 1  # 1.9s of audio heard
     assert transcript.language_code is None
+
+
+def test_live_phrases_are_not_silence_filtered_again(session):
+    """Phrases are already cut at pauses; a second filter could drop short words."""
+    stream = [QUIET] * 3 + [LOUD] * 10 + [QUIET] * 6
+    main, preview = FakeEngine("hello there"), FakeEngine("hel")
+
+    session.run_offline(main, audio_stream=iter(stream), preview_provider=preview)
+
+    assert main.options and all(not o.skip_silence for o in main.options + preview.options)
 
 
 def test_speech_still_going_when_the_stream_ends_is_kept(session):

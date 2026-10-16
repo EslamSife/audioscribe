@@ -597,7 +597,9 @@ class LiveTranscriptionSession:
                 # Give Whisper the previous sentence as context so this phrase
                 # is not transcribed blind
                 context = all_segments[-1].text if all_segments else None
-                opts = replace(base_options, context_prompt=context, beam_size=beam_size)
+                opts = replace(
+                    base_options, context_prompt=context, beam_size=beam_size, skip_silence=False
+                )
                 return engine.transcribe(tmp_wav_path, options=opts)
             except Exception:
                 return None
