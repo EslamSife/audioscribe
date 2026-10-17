@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
+
+First release on PyPI. It also contains everything listed under 0.4.0.
 
 ### Added
 
@@ -21,7 +23,7 @@
 
 ## 0.4.0
 
-First public release on PyPI.
+Prepared for PyPI but never uploaded; first published as part of 0.5.0.
 
 ### Added
 
