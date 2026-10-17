@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from transcribe import config, output
+from transcribe import config, output, voices
 from transcribe.audio.preprocess import optimized_audio_source
 from transcribe.audio.url import is_url, url_audio_source
 from transcribe.live import LiveTranscriptionSession, print_audio_devices_table
@@ -112,8 +112,12 @@ def run_final_pass(
             "(this can take a few minutes, Ctrl+C keeps the live transcript)...[/bold cyan]",
             spinner="dots",
         ):
-            with optimized_audio_source(audio_path, compress=compress) as source:
-                final = transcribe_file(source, engine, options=options)
+            if voices.is_stereo(audio_path):
+                # Meeting mode recording: the call and your microphone, one channel each
+                final = voices.transcribe_two_voices(audio_path, engine, options)
+            else:
+                with optimized_audio_source(audio_path, compress=compress) as source:
+                    final = transcribe_file(source, engine, options=options)
     except KeyboardInterrupt:
         console.print("[yellow]Final pass skipped, keeping the live transcript.[/yellow]")
         return None
@@ -222,6 +226,11 @@ def run_live(
 
     is_offline = is_local(provider)
     warn_ignored_options(provider, options, live=True)
+    if mix_device and not is_offline:
+        console.print(
+            "[yellow]Note: AssemblyAI live mode hears both devices mixed, so lines are not "
+            "labeled Me/Them. Use --provider whisper for the labels.[/yellow]"
+        )
     # The final pass works on the full recording, so it can still label speakers
     final_options = options
     if is_offline and options.speakers:
@@ -457,12 +466,12 @@ def main(
         None,
         "--device",
         "-D",
-        help="Audio input device ID or name substring for live mode (e.g. 'BlackHole', 'Stereo Mix')",
+        help="Audio input device ID or name substring for live mode (e.g. 'BlackHole', 'Stereo Mix'). In meeting mode, the call audio: its lines are labeled 'Them'",
     ),
     mix_device: str | None = typer.Option(
         None,
         "--mix-device",
-        help="Second input device to merge with --device in live mode (e.g. capture BlackHole + your microphone for full meeting audio)",
+        help="Meeting mode: your microphone, recorded together with --device (the call). With --provider whisper, its lines are labeled 'Me'",
     ),
     save_audio: bool = typer.Option(
         True,

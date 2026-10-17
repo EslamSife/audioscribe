@@ -19,8 +19,9 @@ The package is called `audioscribe`; the command you type is `transcribe`.
   transcribes only that video.
 - **Live mode**: transcribe your microphone or computer audio (Zoom, Teams, a browser tab) as
   people speak. Each finished line is saved right away, so a crash does not lose the session.
-- **Meeting mode**: merge two devices (`--device "BlackHole" --mix-device "MacBook"`) to capture
-  the other people and your own microphone in one transcript.
+- **Meeting mode**: record two devices (`--device "BlackHole" --mix-device "MacBook"`) to capture
+  the other people and your own microphone in one transcript. With local Whisper, each line
+  says who spoke: `Me` (your microphone) or `Them` (the call).
 - **Final pass**: live text is a fast draft. `--final-model` transcribes the saved recording
   again with a bigger, more accurate model when you stop.
 - **AI notes** (`--notes`): summary, key points, action items and quotes, written by Claude,
@@ -36,6 +37,7 @@ The package is called `audioscribe`; the command you type is `transcribe`.
 | `--language`, `--auto-detect-language` | yes | yes | yes | yes |
 | `--boost` | yes | yes | yes | yes |
 | `--speakers` | yes | yes | yes (needs the `speakers` extra) | only with `--final-model` |
+| `Me`/`Them` labels in meeting mode | | no (both devices are mixed) | | yes |
 | `--summarize`, `--chapters` | yes | no | no | no |
 
 When an option is not supported, the tool says so instead of ignoring it silently.
@@ -208,6 +210,16 @@ uv run transcribe live --provider whisper --model base --device "BlackHole" --mi
   --final-model small --notes
 ```
 
+In meeting mode, `--device` is the call and `--mix-device` is your microphone. With
+`--provider whisper` the two are not mixed: each line is labeled `Them:` or `Me:`, two people
+talking at once are both heard, and `--notes` knows which tasks are yours. The recording is one
+stereo `.wav` (the call on the left, your microphone on the right), and `--final-model` keeps the
+labels; with `--speakers` it also tells the people on the call apart (`Speaker 1`, `Speaker 2`).
+
+Use headphones if you can. Without them your microphone also hears the call from the speakers.
+Lines that only repeat the call are dropped from the saved transcript (one may still flash by on
+screen), but when you talk over the call at the same moment, your words can be dropped with them.
+
 To record computer audio on macOS you need a virtual audio device such as
 [BlackHole](https://github.com/ExistentialAudio/BlackHole). On Windows, "Stereo Mix" does the
 same job. With local Whisper, live mode finds pauses in speech with the Silero voice activity
@@ -221,6 +233,9 @@ transcribe a saved recording later, like any file:
 ```sh
 uv run transcribe live_session.wav --provider whisper --model small --format md --notes
 ```
+
+A meeting recording transcribed this way is heard as one mixed voice, without `Me`/`Them`
+labels; use `--final-model` during the session to keep them.
 
 A file that is really named `live`, `doctor` or `config` needs a path, for example `./live`.
 

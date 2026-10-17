@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Meeting mode with local Whisper labels each line `Me` (your microphone, `--mix-device`) or
+  `Them` (the call, `--device`). The two devices are no longer mixed, so two people talking at
+  once are both heard, and `--notes` can tell your tasks from theirs. The recording is a stereo
+  WAV (call left, microphone right); `--final-model` transcribes each side and keeps the labels.
+- Without headphones, microphone lines that only repeat the call (echo) are dropped.
+
+### Changed
+
+- AssemblyAI live meeting mode still mixes the two devices and now says that lines are not
+  labeled.
+
+### Security
+
+- Updated locked dependencies with known vulnerabilities (urllib3, multidict, lightning).
+
 ## 0.4.0
 
 First public release on PyPI.

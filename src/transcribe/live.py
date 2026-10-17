@@ -3,6 +3,7 @@ import shutil
 import sys
 import threading
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Callable, Generator, Iterator
 
@@ -17,6 +18,7 @@ from transcribe.transcription.model import (
     TranscriptionError,
     TranscriptionOptions,
 )
+from transcribe.voices import ME, THEM, drop_echoes, interleave, is_echo
 
 console = Console(stderr=True)
 
@@ -139,8 +141,8 @@ def pair_chunks(
     b_wait_s: float = 0.2,
     b_stall_after: int = 5,
     max_b_backlog: int = 2,
-) -> Generator[bytes, None, None]:
-    """Mix device A's chunks with device B's, with A setting the pace.
+) -> Generator[tuple[bytes, bytes], None, None]:
+    """Pair device A's chunks with device B's, with A setting the pace.
 
     Ends when A's queue gets None (its reader stopped). B is optional: when
     it is late, silence takes its place. After a few misses in a row B counts
@@ -176,30 +178,40 @@ def pair_chunks(
             except queue.Empty:
                 break
 
-        yield mix_chunks(chunk_a, chunk_b)
+        yield chunk_a, chunk_b
 
 
 def record_stream(
-    stream: Iterator[bytes], wav_path: Path, sample_rate: int
-) -> Generator[bytes, None, None]:
-    """Pass audio chunks through unchanged while saving them to a 16-bit mono WAV file.
+    stream: Iterator[Any], wav_path: Path, sample_rate: int
+) -> Generator[Any, None, None]:
+    """Pass audio chunks through unchanged while saving them to a 16-bit WAV file.
 
     The live text is only a fast draft; keeping the audio lets a bigger model
     transcribe the whole meeting again afterwards. `wave` rewrites the header
     after every write, and we flush each chunk to disk, so the file stays
     playable with all audio so far even if the process dies mid-meeting.
+    Chunk pairs from two devices are saved as stereo: the call on the left,
+    the microphone on the right.
     """
     import wave
 
     wav_path.parent.mkdir(parents=True, exist_ok=True)
     with wav_path.open("wb") as f, wave.open(f, "wb") as wf:
-        wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(sample_rate)
-        for chunk in stream:
-            wf.writeframes(chunk)
-            f.flush()
-            yield chunk
+        channels = 0
+        try:
+            for chunk in stream:
+                if not channels:
+                    channels = 2 if isinstance(chunk, tuple) else 1
+                    wf.setnchannels(channels)
+                wf.writeframes(interleave(*chunk) if channels == 2 else chunk)
+                f.flush()
+                yield chunk
+        finally:
+            if not channels:
+                # No audio arrived; the WAV header still needs a channel count
+                wf.setnchannels(1)
 
 
 def print_audio_devices_table() -> None:
@@ -299,8 +311,8 @@ class LiveTranscriptionSession:
         except sd.PortAudioError as error:
             raise TranscriptionError(f"Audio device error: {error}") from error
 
-    def get_mixed_stream(self) -> Generator[bytes, None, None]:
-        """Meeting mode: merge two input devices (e.g. BlackHole + microphone) into one mono stream.
+    def get_paired_stream(self) -> Generator[tuple[bytes, bytes], None, None]:
+        """Meeting mode: yield (call, microphone) chunk pairs from the two devices.
 
         Each device is read on its own thread and the chunks are paired up
         by `pair_chunks`. If the main device fails, the stream stops with
@@ -344,6 +356,12 @@ class LiveTranscriptionSession:
                 thread.join(timeout=2.0)
         if main_error:
             raise main_error[0]
+
+    def get_mixed_stream(self) -> Generator[bytes, None, None]:
+        """Both devices merged into one mono stream, for AssemblyAI's single live stream."""
+        with closing(self.get_paired_stream()) as pairs:
+            for chunk_a, chunk_b in pairs:
+                yield mix_chunks(chunk_a, chunk_b)
 
     def get_microphone_stream(self) -> Generator[bytes, None, None]:
         """Generator yielding 16-bit PCM mono audio chunks from system microphone or selected device."""
@@ -507,6 +525,11 @@ class LiveTranscriptionSession:
         the accurate main model transcribes committed lines on a background
         worker thread, so the audio loop never blocks. Audio capture also runs
         on its own thread, so no sound is lost while models are busy.
+
+        With a second device (meeting mode) the two are not mixed: each one is
+        cut into phrases on its own, and lines are labeled Them (--device, the
+        call) and Me (--mix-device, your microphone). `audio_stream` then
+        yields (call, microphone) chunk pairs.
         """
         import tempfile
         import wave
@@ -544,7 +567,10 @@ class LiveTranscriptionSession:
             except OSError:
                 pass
 
-        stream_source = audio_stream or self.get_microphone_stream()
+        two_voices = self.mix_device_id is not None
+        stream_source = audio_stream or (
+            self.get_paired_stream() if two_voices else self.get_microphone_stream()
+        )
         if record_to is not None:
             stream_source = record_stream(stream_source, record_to, self.sample_rate)
         console.print(
@@ -557,12 +583,17 @@ class LiveTranscriptionSession:
 
         all_segments: list[Segment] = []
         detector = SpeechDetector(silence_threshold_db=silence_threshold_db)
-        splitter = PhraseSplitter(chunk_ms=CHUNK_MS)
+        # One phrase splitter per voice; a single device has no label
+        splitters = {
+            label: PhraseSplitter(chunk_ms=CHUNK_MS)
+            for label in ((THEM, ME) if two_voices else (None,))
+        }
+        main_splitter = next(iter(splitters.values()))
         base_options = options or TranscriptionOptions(language=self.language)
 
         # Background reader: drains the audio source continuously so chunks
         # aren't dropped while the (slow) transcription call is running.
-        audio_queue: queue.Queue[bytes | None] = queue.Queue()
+        audio_queue: queue.Queue[Any] = queue.Queue()
         reader_error: list[Exception] = []
 
         def _reader() -> None:
@@ -613,32 +644,47 @@ class LiveTranscriptionSession:
             with io_lock:
                 if finished.is_set():
                     return
+                # Without headphones the microphone also hears the call: skip that echo
+                if segment.speaker == ME and any(
+                    is_echo(segment, s) for s in all_segments if s.speaker != ME
+                ):
+                    return
                 all_segments.append(segment)
                 sys.stderr.write("\r\033[K")
                 (on_turn or _print_line)(segment)
 
         # Committed lines are transcribed by the accurate main model on this
         # worker thread, in order, so the audio loop never waits for it.
-        commit_queue: queue.Queue[Phrase | None] = queue.Queue()
+        commit_queue: queue.Queue[tuple[Phrase, str | None] | None] = queue.Queue()
 
         def _commit_worker() -> None:
             while True:
-                phrase = commit_queue.get()
-                if phrase is None or finished.is_set():
+                item = commit_queue.get()
+                if item is None or finished.is_set():
                     return
+                phrase, label = item
                 if calculate_dbfs(phrase.audio) < silence_threshold_db:
                     continue
                 result = transcribe_phrase(phrase.audio, provider)
                 text = (result.text or "").strip() if result else ""
                 if text:
-                    emit_line(Segment(text=text, start_ms=phrase.start_ms, end_ms=phrase.end_ms))
+                    emit_line(
+                        Segment(
+                            text=text,
+                            start_ms=phrase.start_ms,
+                            end_ms=phrase.end_ms,
+                            speaker=label,
+                        )
+                    )
 
         commit_worker = threading.Thread(target=_commit_worker, daemon=True)
         commit_worker.start()
 
-        def show_preview(text: str) -> None:
+        def show_preview(text: str, label: str | None) -> None:
             if not text:
                 return
+            if label:
+                text = f"{label}: {text}"
             # Fit one terminal line, always showing the END of the sentence
             # (that's where the speaker currently is). Rendered dim so it's
             # visually distinct from committed lines.
@@ -673,14 +719,23 @@ class LiveTranscriptionSession:
                 # Don't clear the preview line when a phrase is committed: it
                 # stays on screen until the worker's final line replaces it in
                 # one motion, so the reader never sees the text vanish.
-                phrase = splitter.feed(chunk, detector.is_speech(chunk))
-                if phrase is not None:
-                    commit_queue.put(phrase)
+                committed = False
+                pieces = chunk if isinstance(chunk, tuple) else (chunk,)
+                for (label, voice), piece in zip(splitters.items(), pieces):
+                    phrase = voice.feed(piece, detector.is_speech(piece))
+                    if phrase is not None:
+                        commit_queue.put((phrase, label))
+                        committed = True
+                if committed:
                     continue
 
+                # Preview the voice with the most new audio; when both talk, they take turns
+                talking = [(label, v) for label, v in splitters.items() if v.in_speech]
+                if not talking:
+                    continue
+                label, splitter = max(talking, key=lambda item: item[1].new_chunks)
                 if (
-                    not splitter.in_speech
-                    or splitter.new_chunks < max(preview_min_chunks, preview_cost_chunks)
+                    splitter.new_chunks < max(preview_min_chunks, preview_cost_chunks)
                     or audio_queue.qsize() > 5
                 ):
                     # Only analyze when we're (nearly) keeping up with the
@@ -705,10 +760,10 @@ class LiveTranscriptionSession:
                     # unfinished tail in the buffer.
                     head = splitter.cut(result.segments[-2].end_ms // CHUNK_MS)
                     if head is not None:
-                        commit_queue.put(head)
-                        show_preview(result.segments[-1].text.strip())
+                        commit_queue.put((head, label))
+                        show_preview(result.segments[-1].text.strip(), label)
                         continue
-                show_preview((result.text or "").strip())
+                show_preview((result.text or "").strip(), label)
 
         except KeyboardInterrupt:
             clear_preview()
@@ -720,20 +775,21 @@ class LiveTranscriptionSession:
         reader_thread.join(timeout=3.0)
 
         if reader_error:
-            if not splitter.now_ms:
+            if not main_splitter.now_ms:
                 raise TranscriptionError(f"Could not record audio: {reader_error[0]}")
             console.print(f"\n[bold red]Audio capture stopped:[/bold red] {reader_error[0]}")
 
         # Transcribe whatever was still being spoken when we stopped, and let
         # the worker finish pending lines. A second Ctrl+C skips the wait.
         try:
-            last = splitter.flush()
-            if last is not None or not commit_queue.empty():
+            last = [(voice.flush(), label) for label, voice in splitters.items()]
+            last = [(phrase, label) for phrase, label in last if phrase is not None]
+            if last or not commit_queue.empty():
                 console.print(
                     "[dim]Finishing the last phrases (press Ctrl+C again to skip)...[/dim]"
                 )
-            if last is not None:
-                commit_queue.put(last)
+            for item in last:
+                commit_queue.put(item)
             commit_queue.put(None)
             commit_worker.join()
         except KeyboardInterrupt:
@@ -741,7 +797,8 @@ class LiveTranscriptionSession:
 
         with io_lock:
             finished.set()
-            segments = tuple(all_segments)
+            # Two voices finish lines out of order; an echo can also arrive before its original
+            segments = drop_echoes(sorted(all_segments, key=lambda s: s.start_ms))
 
         if caffeinate is not None:
             caffeinate.terminate()
@@ -749,6 +806,6 @@ class LiveTranscriptionSession:
         return Transcript(
             text=" ".join(s.text for s in segments),
             segments=segments,
-            audio_duration_s=splitter.now_ms // 1000,
+            audio_duration_s=main_splitter.now_ms // 1000,
             language_code=self.language,
         )

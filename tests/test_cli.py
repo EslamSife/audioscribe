@@ -399,3 +399,57 @@ def test_cli_template_without_notes_says_it_is_ignored(tmp_path, monkeypatch):
         result = runner.invoke(app, [str(audio), "--template", "incident"])
     assert result.exit_code == 0
     assert "--template only applies with --notes" in result.output
+
+
+def test_cli_live_final_pass_labels_a_meeting_recording_me_and_them(tmp_path):
+    """Meeting mode saves the call (left) and your microphone (right) as one stereo WAV."""
+    import struct
+    import wave
+
+    from transcribe import voices
+
+    def record_meeting(engine, on_turn=None, record_to=None, **kwargs):
+        with wave.open(str(record_to), "wb") as wf:
+            wf.setnchannels(2)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(voices.interleave(struct.pack("<h", 8000), struct.pack("<h", 3000)))
+        return DUMMY_TRANSCRIPT
+
+    class ChannelEngine:
+        def transcribe(self, path, *, options):
+            with wave.open(str(path), "rb") as wf:
+                sample = struct.unpack("<h", wf.readframes(1))[0]
+            text = "Can you deploy it?" if sample == 8000 else "Yes, tomorrow."
+            return Transcript(text=text, segments=(Segment(text, 0, 1000),))
+
+    session = MagicMock()
+    session.run_offline.side_effect = record_meeting
+    out_file = tmp_path / "meeting.md"
+    with (
+        patch("transcribe.cli.LiveTranscriptionSession", return_value=session),
+        patch("transcribe.cli.get_provider", return_value=ChannelEngine()),
+    ):
+        result = runner.invoke(
+            app,
+            ["live", "-p", "whisper", "--out", str(out_file), "--format", "md"]
+            + ["--device", "0", "--mix-device", "1", "--final-model", "small"],
+        )
+
+    assert result.exit_code == 0, result.output
+    text = out_file.read_text()
+    assert "**Them:** Can you deploy it?" in text
+    assert "**Me:** Yes, tomorrow." in text
+
+
+def test_cli_assemblyai_meeting_mode_says_lines_are_not_labeled(tmp_path):
+    session = MagicMock()
+    session.run.return_value = DUMMY_TRANSCRIPT
+    with patch("transcribe.cli.LiveTranscriptionSession", return_value=session):
+        result = runner.invoke(
+            app,
+            ["live", "--out", str(tmp_path / "m.md"), "--device", "0", "--mix-device", "1"],
+        )
+
+    assert result.exit_code == 0
+    assert "--provider whisper" in " ".join(result.output.split())
