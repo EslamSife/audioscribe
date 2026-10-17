@@ -189,3 +189,139 @@ def test_record_stream_file_is_playable_before_it_is_closed(tmp_path):
     with wave.open(str(wav_path), "rb") as wf:
         assert wf.getnframes() == 1600
     recorder.close()
+
+
+# --- warnings and stopping while streaming to AssemblyAI ---
+
+QUIET_CHUNK = b"\x00\x00" * 1600
+CLIPPING_CHUNK = b"\xff\x7f" * 1600  # every sample at the 16-bit maximum
+
+
+def run_with_stream(stream):
+    session = LiveTranscriptionSession(api_key="mock-key")
+    client, _ = fake_streaming_client()
+    with patch("assemblyai.streaming.v3.StreamingClient", return_value=client):
+        transcript = session.run(audio_stream=stream)
+    return transcript, client
+
+
+def test_live_session_warns_about_a_muted_microphone(capsys):
+    run_with_stream(iter([QUIET_CHUNK] * 30))
+    assert "extremely low" in capsys.readouterr().err
+
+
+def test_live_session_warns_about_clipping(capsys):
+    run_with_stream(iter([CLIPPING_CHUNK] * 10))
+    assert "clipping" in capsys.readouterr().err
+
+
+def test_ctrl_c_ends_the_session_and_disconnects():
+    def stream():
+        yield b"\x01\x00" * 1600
+        raise KeyboardInterrupt
+
+    transcript, client = run_with_stream(stream())
+    assert transcript.segments == ()
+    assert client.disconnect.called
+
+
+def test_a_failing_disconnect_does_not_lose_the_transcript():
+    session = LiveTranscriptionSession(api_key="mock-key")
+    client, _ = fake_streaming_client()
+    client.disconnect.side_effect = ConnectionError("socket already closed")
+    with patch("assemblyai.streaming.v3.StreamingClient", return_value=client):
+        transcript = session.run(audio_stream=iter([b"\x01\x00" * 1600]))
+    assert transcript.text == ""
+
+
+# --- reading one audio device ---
+
+
+@pytest.fixture
+def sounddevice():
+    try:
+        import sounddevice
+    except OSError:  # Linux without the PortAudio library
+        pytest.skip("PortAudio is not installed")
+    return sounddevice
+
+
+def test_device_reader_yields_chunks_until_asked_to_stop(sounddevice):
+    session = LiveTranscriptionSession(api_key="mock-key")
+    stream_class = create_autospec(sounddevice.RawInputStream)
+    stream = stream_class.return_value.__enter__.return_value
+    stream.read.return_value = (b"\x01\x00" * 1600, False)
+
+    with patch("sounddevice.RawInputStream", stream_class):
+        reader = session._read_device(3)
+        chunks = [next(reader), next(reader)]
+        session._stop_capture.set()
+        chunks += list(reader)
+
+    assert chunks == [b"\x01\x00" * 1600] * 2
+    kwargs = stream_class.call_args.kwargs
+    assert (kwargs["samplerate"], kwargs["blocksize"], kwargs["device"]) == (16000, 1600, 3)
+    assert (kwargs["channels"], kwargs["dtype"]) == (1, "int16")
+
+
+def test_device_error_becomes_a_clear_message(sounddevice):
+    session = LiveTranscriptionSession(api_key="mock-key")
+    with patch(
+        "sounddevice.RawInputStream", side_effect=sounddevice.PortAudioError("Invalid device")
+    ):
+        with pytest.raises(TranscriptionError, match="Audio device error: Invalid device"):
+            list(session._read_device(99))
+
+
+# --- meeting mode: two devices at once ---
+
+
+CHUNK = b"\x01\x00" * 1600
+
+
+def meeting_session(monkeypatch, main, second):
+    """A session whose two devices play the given generator functions."""
+    session = LiveTranscriptionSession(device=0, mix_device=1, require_api_key=False)
+    devices = {0: main, 1: second}
+    monkeypatch.setattr(session, "_read_device", lambda device_id: devices[device_id]())
+    return session
+
+
+def test_meeting_mode_goes_on_when_the_second_device_stops(monkeypatch, capsys):
+    def main():
+        yield from [CHUNK] * 3
+
+    def second():
+        raise TranscriptionError("Audio device error: headphones disconnected")
+        yield
+
+    session = meeting_session(monkeypatch, main, second)
+    chunks = list(session.get_microphone_stream())
+
+    assert chunks == [CHUNK] * 3  # main audio mixed with silence
+    warning = " ".join(capsys.readouterr().err.split())  # Rich wraps long lines
+    assert "Recording goes on with '0' only" in warning
+
+
+def test_meeting_mode_fails_when_the_main_device_fails(monkeypatch):
+    def main():
+        raise TranscriptionError("Audio device error: invalid device")
+        yield
+
+    def second():
+        yield from [CHUNK] * 3
+
+    session = meeting_session(monkeypatch, main, second)
+    with pytest.raises(TranscriptionError, match="invalid device"):
+        list(session.get_microphone_stream())
+
+
+def test_record_stream_without_any_audio_still_closes_cleanly(tmp_path):
+    import wave
+
+    from transcribe.live import record_stream
+
+    wav_path = tmp_path / "meeting.wav"
+    assert list(record_stream(iter([]), wav_path, sample_rate=16000)) == []
+    with wave.open(str(wav_path), "rb") as wf:
+        assert wf.getnframes() == 0

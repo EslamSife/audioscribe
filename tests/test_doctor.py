@@ -140,3 +140,85 @@ def test_cli_doctor_exits_1_only_when_something_is_broken():
     with patch("transcribe.doctor.run_checks", return_value=broken):
         result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1
+
+
+def test_assemblyai_key_is_only_needed_for_the_cloud_engine(monkeypatch):
+    def no_key():
+        raise doctor.config.ConfigError("not set")
+
+    monkeypatch.setattr(doctor.config, "load_api_key", no_key)
+    check = doctor.check_assemblyai_key()
+    assert check.status == WARN
+    assert check.fix == "Run: transcribe config set-key"
+
+    monkeypatch.setattr(doctor.config, "load_api_key", lambda: "key")
+    assert doctor.check_assemblyai_key().status == OK
+
+
+def test_speaker_labels_not_ready_shows_only_the_first_line(monkeypatch):
+    def not_ready():
+        raise doctor.TranscriptionError("HF_TOKEN is not set.\nGet a token at ...")
+
+    monkeypatch.setattr("transcribe.diarization.check_ready", not_ready)
+    check = doctor.check_speakers()
+    assert check.status == WARN
+    assert "HF_TOKEN is not set." in check.detail
+    assert "Get a token" not in check.detail
+
+    monkeypatch.setattr("transcribe.diarization.check_ready", lambda: None)
+    assert doctor.check_speakers().status == OK
+
+
+def test_yt_dlp_version_that_is_not_a_date_is_shown_as_it_is(monkeypatch):
+    monkeypatch.setattr("yt_dlp.version.__version__", "nightly")
+    assert doctor.check_yt_dlp() == Check("yt-dlp", OK, "nightly")
+
+
+def test_openai_provider_with_a_key_is_ok(monkeypatch):
+    monkeypatch.setenv("NOTES_PROVIDER", "openai")
+    monkeypatch.setenv("NOTES_MODEL", "gpt-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "key")
+    [check] = doctor.check_notes()
+    assert check.status == OK
+    assert "gpt-test" in check.detail
+
+
+def test_openai_style_provider_without_the_openai_package_fails(monkeypatch):
+    monkeypatch.setenv("NOTES_PROVIDER", "ollama")
+    monkeypatch.setenv("NOTES_MODEL", "qwen2.5:7b")
+    monkeypatch.setitem(sys.modules, "openai", None)  # import fails as if not installed
+    [check] = doctor.check_notes()
+    assert check.status == FAIL
+    assert "openai" in check.fix
+
+
+def test_ollama_provider_is_checked_at_the_configured_address(monkeypatch):
+    monkeypatch.setenv("NOTES_PROVIDER", "ollama")
+    monkeypatch.setenv("NOTES_MODEL", "qwen2.5:7b")
+    monkeypatch.setenv("NOTES_BASE_URL", "http://gpu-box:11434/v1")
+    asked = []
+
+    def tags(url, timeout):
+        asked.append(url)
+        return ollama_tags("qwen2.5:7b")(url, timeout)
+
+    with patch.object(doctor.urllib.request, "urlopen", tags):
+        [check] = doctor.check_notes()
+    assert check.status == OK
+    assert asked == ["http://gpu-box:11434/api/tags"]
+
+
+@pytest.mark.parametrize(
+    "platform, ffmpeg_fix, loopback_fix",
+    [
+        ("darwin", "brew install ffmpeg", "BlackHole"),
+        ("win32", "winget install ffmpeg", "Stereo Mix"),
+        ("linux", "sudo apt install ffmpeg", "pavucontrol"),
+    ],
+)
+def test_fixes_match_the_operating_system(monkeypatch, platform, ffmpeg_fix, loopback_fix):
+    monkeypatch.setattr(doctor.sys, "platform", platform)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sounddevice("Mic"))
+    assert ffmpeg_fix in doctor.check_ffmpeg().fix
+    assert loopback_fix in doctor.check_audio_devices().fix

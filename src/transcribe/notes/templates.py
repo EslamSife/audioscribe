@@ -16,6 +16,8 @@ Rules:
 - Transcripts come from imperfect speech recognition: fix obvious recognition
   errors from context, but do not change the meaning.
 - Keep timestamps in [MM:SS] form when you quote or reference a moment.
+- Lines labeled "Me:" were said by the person who recorded this (the reader of
+  the note); "Them:" lines are everyone else. Use this to say who will do what.
 - Do not use em dashes; use commas, colons or periods instead.
 """
 

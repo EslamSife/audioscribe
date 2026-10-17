@@ -256,6 +256,7 @@ def test_each_template_asks_for_its_sections_and_keeps_the_shared_rules(template
 
     system, _ = provider.prompts[0]
     assert "Never invent facts" in system
+    assert '"Me:" were said by the person who recorded this' in system
     for section in sections:
         assert section in system
 
