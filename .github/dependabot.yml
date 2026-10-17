@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # Python packages. Only uv.lock changes: the minimum versions in
+  # pyproject.toml stay as they are, so users are not forced to upgrade.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    versioning-strategy: "lockfile-only"
+    groups:
+      python-packages:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # The actions in .github/workflows (pinned to commits)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
